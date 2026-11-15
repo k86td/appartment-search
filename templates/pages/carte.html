@@ -6,6 +6,8 @@
 <title>Appartements</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 {% raw %}
 <style>
   :root {
@@ -50,6 +52,11 @@
          display: inline-block; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
   .pin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .pin.picked { outline: 2px solid var(--mid); }
+  .cluster { background: var(--accent); color: #fff; border-radius: 999px; font-weight: 700;
+             display: flex; flex-direction: column; align-items: center; justify-content: center;
+             line-height: 1.05; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--panel); }
+  .cluster b { font-size: 13px; }
+  .cluster span { font-size: 9px; font-weight: 600; opacity: .9; }
   .dest { background: var(--text); color: var(--bg); border-radius: 6px; padding: 2px 6px; font-size: 11px;
           font-weight: 700; display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; }
   /* Fiche détaillée */
@@ -108,11 +115,31 @@ const MODES = [["bus", "Bus"], ["velo", "Vélo"], ["auto", "Auto"]];
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null;
+let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null, clusterKey = null;
 const map = L.map("map").setView([46.81, -71.27], 12);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "&copy; OpenStreetMap"
 }).addTo(map);
+
+// Regroupement : le badge donne le nombre d'annonces et le prix le plus bas.
+const cluster = L.markerClusterGroup({
+  maxClusterRadius: 45,
+  showCoverageOnHover: false,
+  spiderfyOnMaxZoom: true,        // même adresse : les annonces s'écartent au clic
+  iconCreateFunction(c) {
+    const kids = c.getAllChildMarkers();
+    const prices = kids.map((m) => m.options.prix).filter(Boolean);
+    const size = kids.length < 10 ? 46 : kids.length < 50 ? 52 : 58;
+    const min = prices.length ? `dès ${Math.min(...prices)}$` : "";
+    return L.divIcon({ className: "", iconSize: [size, size],
+      html: `<div class="cluster" style="width:${size}px;height:${size}px"><b>${kids.length}</b><span>${min}</span></div>` });
+  },
+}).addTo(map);
+
+function pinClass(id) { return [id === activeId && "active", picked.has(id) && "picked"].filter(Boolean).join(" "); }
+function pinIcon(l, cls) {
+  return L.divIcon({ className: "", html: `<span class="pin ${cls}">${l.prix ? l.prix + "$" : "?"}</span>` });
+}
 
 async function get(path) {
   const r = await fetch(path);
@@ -169,12 +196,20 @@ function render() {
       </div></div>`;
   }).join("");
 
-  // Marqueurs : seulement les annonces visibles dans la liste.
-  const visible = new Set(rows.map((l) => l.id));
-  for (const [id, m] of Object.entries(markers)) {
-    if (visible.has(id)) m.addTo(map); else m.remove();
-    m.getElement()?.querySelector(".pin")?.classList.toggle("active", id === activeId);
-    m.getElement()?.querySelector(".pin")?.classList.toggle("picked", picked.has(id));
+  // Marqueurs : seulement les annonces visibles dans la liste, regroupées quand elles sont proches.
+  const visibleIds = rows.map((l) => l.id).filter((id) => markers[id]);
+  const key = visibleIds.slice().sort().join(",");
+  if (key !== clusterKey) {
+    clusterKey = key;
+    cluster.clearLayers();
+    cluster.addLayers(visibleIds.map((id) => markers[id]));
+  }
+  for (const id of visibleIds) {
+    const want = pinClass(id);
+    if (markers[id].options.pinClass !== want) {
+      markers[id].options.pinClass = want;
+      markers[id].setIcon(pinIcon(listings.find((l) => l.id === id), want));
+    }
   }
   $("#cmpbtn").textContent = `Comparer (${picked.size})`;
 }
@@ -182,7 +217,7 @@ function render() {
 function focus(id, pan) {
   activeId = id;
   const l = listings.find((x) => x.id === id);
-  if (pan && l?.latitude) map.setView([l.latitude, l.longitude], Math.max(map.getZoom(), 14));
+  if (pan && markers[id]) cluster.zoomToShowLayer(markers[id]);
   render();
   document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
 }
@@ -333,9 +368,7 @@ $("#iso").addEventListener("input", (e) => showIso(e.target.value));
 
   for (const l of listings) {
     if (l.latitude == null) continue;
-    const m = L.marker([l.latitude, l.longitude], {
-      icon: L.divIcon({ className: "", html: `<span class="pin">${l.prix ? l.prix + "$" : "?"}</span>` }),
-    });
+    const m = L.marker([l.latitude, l.longitude], { icon: pinIcon(l, ""), prix: l.prix, pinClass: "" });
     m.on("click", () => focus(l.id, false));
     markers[l.id] = m;
   }
