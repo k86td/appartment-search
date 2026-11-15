@@ -4,6 +4,18 @@ Scrape des sites de logement, stocke les annonces dans SQLite et les affiche ave
 
 ## Utilisation
 
+### Avec Nix
+
+```sh
+nix run .            # un passage de scraping (lit ./config.toml, écrit ./listings.db)
+nix run .#ui         # Datasette sur http://localhost:8001 (DB=chemin pour une autre base)
+nix develop          # shell avec Python, requests et datasette
+```
+
+Depuis ailleurs : `nix run github:k86td/appartment-search -- -c /chemin/config.toml`.
+
+### Avec pip
+
 ```sh
 pip install -e '.[ui]'
 appartment-search -c config.toml          # un passage de scraping
