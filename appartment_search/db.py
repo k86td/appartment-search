@@ -2,7 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from .models import Contact, Details, Listing
+from .models import Caracteristiques, Contact, Details, Listing
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -74,22 +74,50 @@ CREATE TABLE IF NOT EXISTS marques (
     le          TEXT NOT NULL
 );
 
--- Vue pratique pour Datasette : annonce + description + attributs courants.
-CREATE VIEW IF NOT EXISTS annonces AS
+-- Caractéristiques au format STANDARD (models.Caracteristiques), communes à tous les sites.
+-- NULL = inconnu. Booléens en 0/1.
+CREATE TABLE IF NOT EXISTS caracteristiques (
+    listing_id           TEXT PRIMARY KEY REFERENCES listings(id),
+    meuble               TEXT,     -- oui | non | semi
+    animaux              TEXT,     -- oui | non | limite
+    chauffage_inclus     INTEGER,
+    electricite_incluse  INTEGER,
+    eau_chaude_incluse   INTEGER,
+    internet_inclus      INTEGER,
+    stationnements       INTEGER,
+    laveuse_secheuse     TEXT,     -- appareils | entrees | immeuble | non
+    lave_vaisselle       INTEGER,
+    climatisation        INTEGER,
+    ascenseur            INTEGER,
+    balcon               INTEGER,
+    rangement            INTEGER,
+    gym                  INTEGER,
+    piscine              INTEGER,
+    superficie_pi2       INTEGER,
+    etage                INTEGER,
+    chambres             REAL,
+    salles_de_bain       REAL,
+    type_logement        TEXT,
+    bail                 TEXT,
+    fumeur               INTEGER
+);
+
+-- Vue pratique : annonce + description + caractéristiques standard + position.
+-- Recréée à chaque connexion pour suivre les changements de schéma.
+DROP VIEW IF EXISTS annonces;
+CREATE VIEW annonces AS
 SELECT
     l.id, l.source, l.titre, l.prix, l.taille, l.adresse, l.disponible, l.url,
     l.premiere_vue, l.actif,
     d.description,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'furnished')          AS meuble,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'petsallowed')        AS animaux,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'heat')               AS chauffage_inclus,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'hydro')              AS hydro_inclus,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'numberparkingspots') AS stationnements,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'laundryinunit')      AS laveuse_secheuse,
-    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'areainfeet')         AS pi2,
+    c.meuble, c.animaux, c.chauffage_inclus, c.electricite_incluse, c.eau_chaude_incluse,
+    c.internet_inclus, c.stationnements, c.laveuse_secheuse, c.lave_vaisselle, c.climatisation,
+    c.ascenseur, c.balcon, c.rangement, c.gym, c.piscine, c.superficie_pi2, c.etage,
+    c.chambres, c.salles_de_bain, c.type_logement, c.bail, c.fumeur,
     g.lat AS latitude, g.lng AS longitude
 FROM listings l
 LEFT JOIN details d ON d.listing_id = l.id
+LEFT JOIN caracteristiques c ON c.listing_id = l.id
 LEFT JOIN geo g ON g.adresse = l.adresse;
 """
 
@@ -157,6 +185,7 @@ def save_details(conn: sqlite3.Connection, listing_id: str, d: Details) -> None:
     )
     if d.contact:
         save_contact(conn, listing_id, d.contact)
+    save_caracteristiques(conn, listing_id, d.caracteristiques)
     conn.executemany(
         "INSERT OR IGNORE INTO images (listing_id, idx, url) VALUES (?, ?, ?)",
         [(listing_id, i, u) for i, u in enumerate(d.images)],
@@ -167,6 +196,17 @@ def save_details(conn: sqlite3.Connection, listing_id: str, d: Details) -> None:
         [(listing_id, nom, lib, val, canon) for nom, (lib, val, canon) in d.attributs.items()],
     )
     conn.commit()
+
+
+def save_caracteristiques(conn: sqlite3.Connection, listing_id: str, c: Caracteristiques) -> None:
+    champs = Caracteristiques.CHAMPS
+    vals = [getattr(c, f) for f in champs]
+    vals = [int(v) if isinstance(v, bool) else v for v in vals]
+    conn.execute(
+        f"INSERT OR REPLACE INTO caracteristiques (listing_id, {', '.join(champs)}) "
+        f"VALUES (?, {', '.join('?' * len(champs))})",
+        [listing_id, *vals],
+    )
 
 
 def mark_inactive(conn: sqlite3.Connection, listing_id: str) -> None:
@@ -193,14 +233,19 @@ def backfill(conn: sqlite3.Connection, scrapers: dict) -> None:
         conn.execute("UPDATE details SET description = ? WHERE listing_id = ?",
                      (texte_propre(desc), listing_id))
 
+    # Annonces en cache sans contact ou sans caractéristiques standard : on les reconstruit
+    # depuis le JSON brut, sans refaire de requête.
     rows = conn.execute(
         """SELECT d.listing_id, d.images, d.raw FROM details d
-           WHERE NOT EXISTS (SELECT 1 FROM contacts c WHERE c.listing_id = d.listing_id)"""
+           WHERE NOT EXISTS (SELECT 1 FROM contacts c WHERE c.listing_id = d.listing_id)
+              OR NOT EXISTS (SELECT 1 FROM caracteristiques k WHERE k.listing_id = d.listing_id)"""
     ).fetchall()
     for listing_id, images, raw in rows:
         scraper = scrapers.get(listing_id.split(":", 1)[0])
-        contact = scraper.contact_from_raw(json.loads(raw or "{}")) if scraper else None
-        save_contact(conn, listing_id, contact or Contact())
+        det = scraper.details_from_raw(json.loads(raw or "{}")) if scraper else None
+        if not conn.execute("SELECT 1 FROM contacts WHERE listing_id = ?", (listing_id,)).fetchone():
+            save_contact(conn, listing_id, (det and det.contact) or Contact())
+        save_caracteristiques(conn, listing_id, det.caracteristiques if det else Caracteristiques())
         conn.executemany(
             "INSERT OR IGNORE INTO images (listing_id, idx, url) VALUES (?, ?, ?)",
             [(listing_id, i, u) for i, u in enumerate(json.loads(images or "[]"))],

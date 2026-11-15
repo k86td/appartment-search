@@ -8,7 +8,7 @@ import re
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-from ..models import Contact, Details, Listing
+from ..models import Caracteristiques, Contact, Details, Listing
 from .base import Scraper, courriels, taille_depuis_texte, telephones, texte_propre
 
 log = logging.getLogger(__name__)
@@ -119,6 +119,54 @@ def to_contact(raw: dict, state: dict) -> Contact:
     )
 
 
+def _b(v: str | None) -> bool | None:
+    return None if v in (None, "") else v not in ("0", "false")
+
+
+def _n(v: str | None) -> float | None:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+UNITES = {"apartment": "appartement", "condo": "condo", "house": "maison", "townhouse": "maison de ville",
+          "basement-apartment": "sous-sol", "duplex-triplex": "plex"}
+
+
+def to_caracteristiques(a: dict[str, tuple]) -> Caracteristiques:
+    """Attributs Kijiji (nom -> (libellé, valeur, valeur canonique)) -> format standard."""
+    c = lambda k: (a.get(k) or (None, None, None))[2]
+    v = lambda k: (a.get(k) or (None, None, None))[1]
+    lav = None
+    if c("laundryinunit") is not None or c("laundryinbuilding") is not None:
+        lav = "appareils" if _b(c("laundryinunit")) else "immeuble" if _b(c("laundryinbuilding")) else "non"
+    sdb = _n(c("numberbathrooms"))
+    return Caracteristiques(
+        meuble={"1": "oui", "0": "non"}.get(c("furnished")),
+        animaux={"1": "oui", "0": "non", "limited": "limite"}.get(c("petsallowed")),
+        chauffage_inclus=_b(c("heat")),
+        electricite_incluse=_b(c("hydro")),
+        eau_chaude_incluse=_b(c("water")),
+        internet_inclus=_b(c("internet")),
+        stationnements=int(_n(c("numberparkingspots"))) if _n(c("numberparkingspots")) is not None else None,
+        laveuse_secheuse=lav,
+        lave_vaisselle=_b(c("dishwasher")),
+        climatisation=_b(c("airconditioning")),
+        ascenseur=_b(c("elevator")),
+        balcon=_b(c("balcony")),
+        rangement=_b(c("storagelocker")),
+        gym=_b(c("gym")),
+        piscine=_b(c("pool")),
+        superficie_pi2=int(_n(v("areainfeet"))) if _n(v("areainfeet")) else None,
+        chambres=_n(c("numberbedrooms")),
+        salles_de_bain=sdb / 10 if sdb and sdb >= 10 else sdb,      # Kijiji : 10 = 1 salle de bain
+        type_logement=UNITES.get(c("unittype"), c("unittype")),
+        bail={"one-year": "12 mois", "month-to-month": "mois à mois"}.get(c("agreementtype"), c("agreementtype")),
+        fumeur={"1": True, "0": False, "2": True}.get(c("smokingpermitted")),
+    )
+
+
 def to_details(raw: dict, others: dict) -> Details:
     attributs = {}
     for a in (raw.get("attributes") or {}).get("all", []):
@@ -132,6 +180,7 @@ def to_details(raw: dict, others: dict) -> Details:
     return Details(
         description=texte_propre(raw.get("description")),
         images=raw.get("imageUrls") or [],
+        caracteristiques=to_caracteristiques(attributs),
         attributs=attributs,
         contact=to_contact(raw, others.get("autres", {})),
         raw={"listing": raw, **others},
@@ -188,10 +237,10 @@ class KijijiScraper(Scraper):
     def catalogue_complet(self) -> bool:
         return getattr(self, "_complet", False)
 
-    def contact_from_raw(self, raw: dict) -> Contact | None:
+    def details_from_raw(self, raw: dict) -> Details | None:
         if "listing" not in raw:
             return None
-        return to_contact(raw["listing"], raw.get("autres", {}))
+        return to_details(raw["listing"], {"autres": raw.get("autres", {})})
 
     def image_download_url(self, url: str) -> str:
         rule = self.config.get("image_rule", "kijijica-1600-webp")

@@ -66,5 +66,9 @@ Page **http://localhost:8001/carte** : liste triable (prix, temps de trajet), ca
 
 1. Créer `appartment_search/scrapers/<site>.py` avec une classe qui hérite de `Scraper` et implémente `scrape() -> list[Listing]`.
    Optionnel : `fetch_details(source_id, url) -> Details | None` pour ouvrir la page de chaque annonce.
+   Les infos (meublé, inclusions, stationnement…) vont dans `Details.caracteristiques`, au format
+   **standard** `models.Caracteristiques`, commun à tous les sites (`None` = inconnu). Les attributs
+   bruts du site peuvent aussi être gardés dans `Details.attributs`, pour consultation.
+   `details_from_raw(raw)` permet de reconstruire les détails depuis le cache sans requête.
 2. L'enregistrer dans `scrapers/__init__.py`.
 3. Ajouter une section `[scrapers.<site>]` dans `config.toml`.

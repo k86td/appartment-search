@@ -36,8 +36,9 @@ class Scraper(ABC):
         Par défaut : pas de détails (pour les sites où la liste suffit)."""
         return None
 
-    def contact_from_raw(self, raw: dict) -> Contact | None:
-        """Reconstruit le contact depuis details.raw (rattrapage des anciennes annonces)."""
+    def details_from_raw(self, raw: dict) -> Details | None:
+        """Reconstruit les détails depuis details.raw, sans requête : sert à remplir
+        les nouvelles tables (contacts, caractéristiques) pour les annonces déjà en cache."""
         return None
 
     def image_download_url(self, url: str) -> str:

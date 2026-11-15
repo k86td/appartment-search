@@ -102,6 +102,7 @@ def main() -> None:
         conn = db.connect(config.get("database", "listings.db"))
         trajets.create_tables(conn, config.get("trajets", {}).get("destinations", []))
         conn.executescript(isochrones.SCHEMA)
+        db.backfill(conn, {n: SCRAPERS[n](c, set()) for n, c in config.get("scrapers", {}).items() if n in SCRAPERS})
         return
     if args.isochrones:
         t = config.get("trajets", {})

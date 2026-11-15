@@ -4,7 +4,7 @@ databases:
     tables:
       annonces_trajets:
         sort: ulaval_bus
-        facets: [source, taille, meuble, animaux, chauffage_inclus]
+        facets: [source, taille, meuble, animaux, chauffage_inclus, laveuse_secheuse]
       annonces:
         sort_desc: premiere_vue
         facets: [source, taille, meuble, animaux, chauffage_inclus, actif]
@@ -15,6 +15,8 @@ databases:
         facets: [nom, valeur]
       contacts:
         facets: [type]
+      caracteristiques:
+        facets: [meuble, animaux, chauffage_inclus, electricite_incluse, laveuse_secheuse, type_logement]
     queries:
       carte:
         title: Annonces actives sur la carte

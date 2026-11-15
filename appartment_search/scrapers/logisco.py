@@ -9,7 +9,7 @@ import logging
 import re
 from bs4 import BeautifulSoup
 
-from ..models import Contact, Details, Listing
+from ..models import Caracteristiques, Contact, Details, Listing
 from .base import Scraper, taille_depuis_texte, telephones
 
 log = logging.getLogger(__name__)
@@ -18,21 +18,7 @@ API = "https://logisco.com/api/search"
 TYPE_UNITE = "990a8ebe-9b92-4405-a677-c28224679724"   # page_type_id des pages « Unité »
 TEL_DEFAUT = "1-833-564-4726"
 
-# Codes LOGISCO -> noms d'attributs Kijiji (pour la vue `annonces`).
-CODES_KIJIJI = {
-    "HEATING": "heat",
-    "ELECTRICITY": "hydro",
-    "HOT_WATER": "water",
-    "WIFI": "internet",
-    "AC": "airconditioning",
-    "WASHER_DRYER": "laundryinunit",
-    "ENTRANCE_WASHER_DRYER": "laundryinunit",
-    "DISHWASHER_CONNECTION": "dishwasher",
-    "ELEVATOR": "elevator",
-    "GYM": "gym",
-    "DOG_ACCEPTED": "petsallowed",
-    "STORAGE": "storagelocker",
-}
+# Places de stationnement incluses dans le loyer (section « Amenities »).
 PARKING = {"INDOOR_PARKING": 1, "OUTDOOR_PARKING": 1, "OUTDOOR_OR_INDOOR_PARKING": 1, "DOUBLE_PARKING": 2}
 
 GROUPES = [  # (code d'attribut, titre dans la description)
@@ -84,27 +70,48 @@ def to_listing(hit: dict) -> Listing:
 
 
 def to_details(hit: dict, page: BeautifulSoup | None) -> Details:
-    attributs = {}
-    lignes = []
+    attributs, lignes = {}, []
     for code, titre in GROUPES:
         vals = _vals(hit, code)
         if vals:
             lignes.append(f"{titre} :\n" + "\n".join(f"• {v['value']}" for v in vals))
-        for v in vals:
-            attributs[v["code"].lower()] = (v["value"], "Yes", "1")
-            if v["code"] in CODES_KIJIJI:
-                attributs[CODES_KIJIJI[v["code"]]] = (v["value"], "Yes", "1")
-    for k in ("heat", "hydro", "furnished", "petsallowed"):
-        attributs.setdefault(k, (k, "No", "0"))
-    places = max((PARKING.get(v["code"], 0) for v in _vals(hit, "Amenities")), default=0)
-    attributs["numberparkingspots"] = ("Stationnement inclus", str(places), str(places))
-    if _val(hit, "SurfaceArea"):
-        attributs["areainfeet"] = ("Superficie (pi²)", str(_val(hit, "SurfaceArea")), str(_val(hit, "SurfaceArea")))
-    if _val(hit, "Floor"):
-        attributs["floor"] = ("Étage", str(_val(hit, "Floor")), str(_val(hit, "Floor")))
-    if _val(hit, "NumberOfBedrooms") is not None:
-        n = str(_val(hit, "NumberOfBedrooms"))
-        attributs["numberbedrooms"] = ("Chambres", n, n)
+        for v in vals:                                   # attributs bruts LOGISCO
+            attributs[v["code"].lower()] = (v["value"], "Oui", "1")
+    for code in ("SurfaceArea", "Floor", "NumberOfBedrooms", "NumberOfBathrooms"):
+        if _val(hit, code) is not None:
+            attributs[code] = (code, str(_val(hit, code)), str(_val(hit, code)))
+
+    # Format standard. LOGISCO liste ce qui EST inclus : absent = non.
+    codes = {v["code"] for g, _ in GROUPES for v in _vals(hit, g)}
+    has = lambda *k: any(x in codes for x in k)
+    def num(k):
+        try:
+            return float(_val(hit, k))
+        except (TypeError, ValueError):
+            return None
+    carac = Caracteristiques(
+        meuble="oui" if has("FURNISHED") else "non",
+        animaux="oui" if has("DOG_ACCEPTED") else None,       # sinon : non précisé
+        chauffage_inclus=has("HEATING"),
+        electricite_incluse=has("ELECTRICITY"),
+        eau_chaude_incluse=has("HOT_WATER"),
+        internet_inclus=has("WIFI", "INTERNET"),
+        stationnements=max((PARKING.get(v["code"], 0) for v in _vals(hit, "Amenities")), default=0),
+        laveuse_secheuse="appareils" if has("WASHER_DRYER") else "entrees" if has("ENTRANCE_WASHER_DRYER")
+                         else "immeuble" if has("LAUNDRY_ROOM") else "non",
+        lave_vaisselle=has("DISHWASHER", "DISHWASHER_CONNECTION"),
+        climatisation=has("AC", "HEAT_PUMP"),
+        ascenseur=has("ELEVATOR"),
+        balcon=True if has("BALCONY", "PRIVATE_TERRACE") else None,   # pas toujours indiqué
+        rangement=has("STORAGE", "ADDITIONAL_STORAGE"),
+        gym=has("GYM"),
+        piscine=has("INDOOR_POOL", "UNHEATED_OUTDOOR_POOL", "HEATED_OUTDOOR_POOL"),
+        superficie_pi2=int(num("SurfaceArea")) if num("SurfaceArea") else None,
+        etage=int(num("Floor")) if num("Floor") is not None else None,
+        chambres=num("NumberOfBedrooms"),
+        salles_de_bain=num("NumberOfBathrooms"),
+        type_logement="appartement",
+    )
 
     images, adresse, tel = [], None, None
     if page:
@@ -134,6 +141,7 @@ def to_details(hit: dict, page: BeautifulSoup | None) -> Details:
     return Details(
         description="\n\n".join(lignes) or None,
         images=images,
+        caracteristiques=carac,
         attributs=attributs,
         contact=Contact(
             nom="LOGISCO" + (f" — {chemin[-2]}" if len(chemin) > 3 else ""),
@@ -184,5 +192,5 @@ class LogiscoScraper(Scraper):
         page = BeautifulSoup(resp.text, "html.parser") if resp.ok else None
         return to_details(hit, page)
 
-    def contact_from_raw(self, raw: dict) -> Contact | None:
-        return to_details(raw["hit"], None).contact if "hit" in raw else None
+    def details_from_raw(self, raw: dict) -> Details | None:
+        return to_details(raw["hit"], None) if "hit" in raw else None

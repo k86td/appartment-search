@@ -214,6 +214,11 @@
   #sheet h2 { margin: 0; font-size: 19px; flex: 1; letter-spacing: -.01em; }
   .meta { color: var(--muted); font-size: 13px; margin: 2px 0; }
   .contact { margin: 6px 0; }
+  .feats { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .feat { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+  .feat b { font-weight: 600; color: var(--text); }
+  .feat.yes { background: var(--accent-soft); }
+  .unk { color: var(--muted); }
   #sheet .times { flex-direction: row; gap: 18px; font-size: 13px; margin: 10px 0; }
   #sheet .trow { flex-direction: column; align-items: flex-start; gap: 2px; }
   #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; margin: 12px 0; }
@@ -703,6 +708,34 @@ function focus(id, pan) {
   if (pan && l.latitude != null) showAt(L.latLng(l.latitude, l.longitude), Math.max(map.getZoom(), 15));
 }
 
+// Caractéristiques au format standard (commun à tous les sites). null = le site ne le dit pas.
+const CARAC = [
+  ["meuble", "Meublé"], ["animaux", "Animaux"], ["chauffage_inclus", "Chauffage inclus"],
+  ["electricite_incluse", "Électricité incluse"], ["eau_chaude_incluse", "Eau chaude incluse"],
+  ["internet_inclus", "Internet inclus"], ["stationnements", "Stationnement"],
+  ["laveuse_secheuse", "Laveuse-sécheuse"], ["lave_vaisselle", "Lave-vaisselle"],
+  ["climatisation", "Climatisation"], ["ascenseur", "Ascenseur"], ["balcon", "Balcon"],
+  ["rangement", "Rangement"], ["gym", "Gym"], ["piscine", "Piscine"], ["etage", "Étage"],
+  ["chambres", "Chambres"], ["salles_de_bain", "Salles de bain"], ["type_logement", "Type"], ["bail", "Bail"],
+];
+const LIBELLES = { semi: "semi-meublé", limite: "à discuter", appareils: "appareils inclus",
+                   entrees: "entrées seulement", immeuble: "dans l'immeuble" };
+function fmtCarac(k, v) {
+  if (v == null || v === "") return '<span class="unk">?</span>';
+  if (k === "stationnements") return v > 0 ? `${v} place${v > 1 ? "s" : ""}` : "non";
+  if (typeof v === "number" && !["etage", "chambres", "salles_de_bain"].includes(k)) return v ? "oui" : "non";
+  return esc(LIBELLES[v] ?? v);
+}
+function caracHtml(l) {
+  // Dans la fiche : seulement ce qui est connu, « oui » en évidence.
+  const items = CARAC.filter(([k]) => l[k] != null && l[k] !== "")
+    .map(([k, label]) => {
+      const v = l[k], yes = v === 1 || v === "oui" || (k === "stationnements" && v > 0) || v === "appareils";
+      return `<span class="feat ${yes ? "yes" : ""}"><b>${label}</b> ${fmtCarac(k, v)}</span>`;
+    });
+  return items.length ? `<div class="feats">${items.join("")}</div>` : "";
+}
+
 function contactHtml(l) {
   const tels = (l.telephones || "").split(", ").filter(Boolean);
   const mails = (l.courriels || "").split(", ").filter(Boolean);
@@ -764,12 +797,10 @@ function openSheet(id) {
     <div class="line1"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
       ${l.taille ? `<span class="tag">${esc(l.taille)}</span>` : ""}
       ${dispo(l) ? `<span class="tag">dispo ${esc(dispo(l))}</span>` : ""}
-      ${l.pi2 && l.pi2 !== "0" ? `<span class="tag">${esc(l.pi2)} pi²</span>` : ""}
+      ${l.superficie_pi2 ? `<span class="tag">${esc(l.superficie_pi2)} pi²</span>` : ""}
       ${l.actif ? "" : '<span class="tag gone">retirée</span>'}</div>
     <div class="meta">${esc(l.adresse || "")}</div>
-    <div class="meta">Meublé : ${esc(l.meuble || "?")} · Animaux : ${esc(l.animaux || "?")}
-      · Chauffage : ${esc(l.chauffage_inclus || "?")} · Hydro : ${esc(l.hydro_inclus || "?")}
-      · Stationnements : ${esc(l.stationnements || "?")}</div>
+    ${caracHtml(l)}
     ${contactHtml(l)}
     ${timesHtml(l)}
     <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
@@ -795,13 +826,10 @@ function renderCompare() {
     ${line("Annonce", (l) => `<a href="#" data-open="${esc(l.id)}">${esc(l.titre)}</a>`)}
     ${line("Prix", (l) => l.prix ? l.prix + " $" : "?")}
     ${line("Taille", (l) => esc(l.taille || "?"))}
-    ${line("Superficie", (l) => esc(l.pi2 || "?") + " pi²")}
+    ${line("Superficie", (l) => l.superficie_pi2 ? esc(l.superficie_pi2) + " pi²" : "?")}
     ${line("Adresse", (l) => esc(l.adresse || ""))}
     ${line("Dispo", (l) => esc(l.disponible || "?"))}
-    ${line("Meublé", (l) => esc(l.meuble || "?"))}
-    ${line("Animaux", (l) => esc(l.animaux || "?"))}
-    ${line("Chauffage / Hydro", (l) => esc(l.chauffage_inclus || "?") + " / " + esc(l.hydro_inclus || "?"))}
-    ${line("Stationnements", (l) => esc(l.stationnements || "?"))}
+    ${CARAC.map(([k, label]) => line(label, (l) => fmtCarac(k, l[k]))).join("")}
     ${line("Contact", (l) => esc(l.contact_nom || "") + " " + (l.telephones || l.telephone_partiel || ""))}`;
   for (const d of dests) for (const [m, n] of MODES)
     html += line(`${esc(d.nom)} · ${n}`, (l) => `<span class="${timeClass(l[`${d.slug}_${m}`])}">${fmt(l[`${d.slug}_${m}`])}</span>`);

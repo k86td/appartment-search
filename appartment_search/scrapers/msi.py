@@ -6,7 +6,7 @@ contenant des logements. Un appel suffit, détails compris ; rien à ouvrir par 
 
 import logging
 
-from ..models import Contact, Details, Listing
+from ..models import Caracteristiques, Contact, Details, Listing
 from .base import Scraper, taille_depuis_texte, telephones, texte_propre
 
 log = logging.getLogger(__name__)
@@ -15,26 +15,6 @@ API = "https://api.msimmobiliers.com/wp-json/imedia/v2/catalog"
 SITE = "https://msimmobiliers.com"
 TEL_BUREAU = "418-681-7888"   # bureau de Québec (wp-json/imedia/v2/settings)
 TYPES_EXCLUS = {"Rangement", "Local commercial", "Stationnement extérieur", "Entrepôt"}
-
-# Équivalences vers les noms d'attributs de Kijiji, pour que la vue `annonces`
-# (meublé, chauffage, hydro...) fonctionne pour toutes les sources.
-FACILITES_KIJIJI = {
-    "heating_included": "heat",
-    "electricity_included": "hydro",
-    "hotwater_included": "water",
-    "internet_included": "internet",
-    "furnished": "furnished",
-    "washer_entrance": "laundryinunit",
-    "dishwasher_entrance": "dishwasher",
-    "air_conditioning": "airconditioning",
-    "elevator": "elevator",
-    "balcony": "balcony",
-    "gym": "gym",
-    "pool": "pool",
-    "bicycle_parking": "bicycleparking",
-    "locker": "storagelocker",
-}
-
 
 def _fr(v):
     return v.get("fr") if isinstance(v, dict) else v
@@ -84,28 +64,38 @@ def to_listing_details(u: dict, projet: dict | None) -> tuple[Listing, Details]:
     facilites = [f for f in (u.get("facilities") or []) if isinstance(f, dict) and f.get("slug")]
     notes = [_fr(n) for n in (u.get("secondaryFacilities") or []) + (lieu.get("secondaryFacilities") or []) if n]
     slugs = {f["slug"] for f in facilites}
-    attributs = {
-        f["slug"]: (_fr(f.get("name")), "Yes", "1") for f in facilites
-    }
-    for msi, kijiji in FACILITES_KIJIJI.items():
-        if msi in slugs:
-            attributs[kijiji] = attributs[msi]
-    if "half_furnished" in slugs and "furnished" not in slugs:
-        attributs["furnished"] = ("Semi-meublé", "Semi-meublé", "0.5")
-    attributs.setdefault("furnished", ("Meublé", "No", "0"))
-    attributs["petsallowed"] = ("Chien accepté", "Yes" if u.get("dogAllowed") else "No",
-                                "1" if u.get("dogAllowed") else "0")
-    attributs["numberparkingspots"] = ("Stationnement inclus",
-                                       "1" if "parking_included" in slugs else "0",
-                                       "1" if "parking_included" in slugs else "0")
-    if u.get("area"):
-        attributs["areainfeet"] = ("Superficie (pi²)", str(u["area"]), str(u["area"]))
-    for cle in ("floor", "rooms", "reference"):
+    # Attributs bruts MSI (noms d'origine), pour consultation.
+    attributs = {f["slug"]: (_fr(f.get("name")), "Oui", "1") for f in facilites}
+    for cle in ("area", "floor", "rooms", "reference", "dogAllowed"):
         if u.get(cle) is not None:
             attributs[cle] = (cle, str(u[cle]), str(u[cle]))
     for cle in ("walkScore", "transitScore", "bikeScore"):
         if lieu.get(cle):
             attributs[cle] = (cle, str(lieu[cle]), str(lieu[cle]))
+
+    # Format standard. Le catalogue liste ce qui EST offert : une commodité absente = non.
+    has = lambda *k: any(x in slugs for x in k)
+    carac = Caracteristiques(
+        meuble="oui" if has("furnished") else "semi" if has("half_furnished") else "non",
+        animaux="oui" if u.get("dogAllowed") else None,     # « chien accepté » ; sinon inconnu (chats ?)
+        chauffage_inclus=has("heating_included"),
+        electricite_incluse=has("electricity_included"),
+        eau_chaude_incluse=has("hotwater_included"),
+        internet_inclus=has("internet_included"),
+        stationnements=1 if has("parking_included") else 0,
+        laveuse_secheuse="appareils" if has("washer_dryer") else "entrees" if has("washer_entrance")
+                         else "immeuble" if has("laundry") else "non",
+        lave_vaisselle=has("dishwasher", "dishwasher_entrance"),
+        climatisation=has("air_conditioning", "heat_pump"),
+        ascenseur=has("elevator"),
+        balcon=has("balcony"),
+        rangement=has("locker", "storage"),
+        gym=has("gym"),
+        piscine=has("pool"),
+        superficie_pi2=int(u["area"]) if u.get("area") else None,
+        etage=int(u["floor"]) if str(u.get("floor") or "").lstrip("-").isdigit() else None,
+        type_logement="maison" if (u.get("category") or {}).get("slug") == "house" else "appartement",
+    )
 
     desc = texte_propre(_fr(lieu.get("description"))) or ""
     if notes:
@@ -130,6 +120,7 @@ def to_listing_details(u: dict, projet: dict | None) -> tuple[Listing, Details]:
     details = Details(
         description=desc,
         images=_images(u, projet) if projet else _images(u),
+        caracteristiques=carac,
         attributs=attributs,
         contact=Contact(
             nom="MSI Gestion immobilière" + (f" — {_fr(projet.get('title'))}" if projet else ""),
@@ -176,7 +167,7 @@ class MsiScraper(Scraper):
         # Tout est déjà dans le catalogue. Absent du catalogue = loué/retiré.
         return self._details.get(source_id)
 
-    def contact_from_raw(self, raw: dict) -> Contact | None:
+    def details_from_raw(self, raw: dict) -> Details | None:
         if "logement" not in raw:
             return None
-        return to_listing_details(raw["logement"], raw.get("projet"))[1].contact
+        return to_listing_details(raw["logement"], raw.get("projet"))[1]
