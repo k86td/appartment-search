@@ -257,6 +257,27 @@
   #compare img { width: 160px; height: 110px; object-fit: cover; border-radius: 10px; }
   #compare button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 3px 8px; }
 
+  /* ---------- Ordinateur : la fiche est un tiroir à droite, la carte reste au centre ---------- */
+  @keyframes slideIn { from { transform: translateX(calc(100% + 24px)); } }
+  @media (min-width: 721px) {
+    #modal { inset: 12px 12px 12px auto; width: min(560px, 42vw); background: none; backdrop-filter: none;
+             z-index: 1200; pointer-events: none; }
+    #modal.open { display: block; animation: none; }
+    #modal.closing { animation: none; }
+    #sheet { pointer-events: auto; width: 100%; height: 100%; max-height: none; border: 1px solid var(--line);
+             border-radius: var(--radius); padding: 0 18px 20px; }
+    #modal.open #sheet { animation: slideIn .32s cubic-bezier(.2,.8,.2,1) both; }
+    #modal.closing #sheet { animation: slideIn .2s ease-in reverse both; }
+    #sheet header { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 14px 0 8px;
+                    flex-wrap: wrap; margin: 0; }
+    #sheet h2 { font-size: 17px; flex-basis: 100%; order: -1; margin-bottom: 4px; }
+    #sheet header .grow-m { flex: 1; }
+    #sheet .times { flex-wrap: wrap; }
+    #gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    #gallery img { height: 120px; }
+    body.drawer #compare { right: calc(min(560px, 42vw) + 24px); }
+    body.drawer .leaflet-right { right: calc(min(560px, 42vw) + 12px); transition: right .3s; }
+  }
   .grip, .mobile-only { display: none; }
   @media (max-width: 720px) {
     body { height: 100dvh; }
@@ -417,7 +438,9 @@ function viewPad() {
   if (state.collapsed) return { tl: [20, 60], br: [20, 20] };
   const r = side.getBoundingClientRect();
   if (isMobile()) return { tl: [20, 60], br: [20, Math.max(20, H - r.top + 10)] };
-  return { tl: [r.right + 20, 20], br: [20, 20] };
+  const d = $("#modal").classList.contains("open") && !$("#modal").classList.contains("closing")
+    ? $("#modal").getBoundingClientRect().width + 32 : 20;
+  return { tl: [r.right + 20, 20], br: [d, 20] };
 }
 // Centre de la zone visible, en décalage par rapport au centre de la carte (pixels).
 function viewShift() {
@@ -495,7 +518,8 @@ function rebuildMarkers(rows) {
       prix: Math.min(...g.ids.map((id) => byId[id].prix || Infinity)) });
     g.marker.on("click", () => {
       const wasHidden = state.collapsed || (isMobile() && $("#side").classList.contains("expanded"));
-      g.ids.length === 1 ? focus(g.ids[0], false) : setLieu(g.key);
+      if (g.ids.length > 1) setLieu(g.key);
+      else { focus(g.ids[0], false); if (!isMobile()) openSheet(g.ids[0]); }
       const ll = L.latLng(g.lat, g.lng);
       wasHidden ? afterPanel(() => ensureVisible(ll)) : ensureVisible(ll);
     });
@@ -828,7 +852,8 @@ function _closeSheet() {
   const m = $("#modal");
   if (!m.classList.contains("open") || m.classList.contains("closing")) return;
   m.classList.add("closing");
-  setTimeout(() => m.classList.remove("open", "closing"), 160);
+  document.body.classList.remove("drawer");
+  setTimeout(() => m.classList.remove("open", "closing"), isMobile() ? 160 : 200);
 }
 
 function openSheet(id) {
@@ -851,8 +876,14 @@ function openSheet(id) {
     ${timesHtml(l)}
     <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
     <div id="desc">${esc(l.description || "")}</div>`;
-  if (!$("#modal").classList.contains("open")) openLayer("sheet");
+  const dejaOuvert = $("#modal").classList.contains("open");
+  if (!dejaOuvert) openLayer("sheet");
   $("#modal").classList.add("open");
+  if (!isMobile()) {
+    document.body.classList.add("drawer");
+    $("#sheet").scrollTop = 0;
+    if (l.latitude != null) requestAnimationFrame(() => ensureVisible(L.latLng(l.latitude, l.longitude)));
+  }
   $("#close").onclick = closeModal;
   $("#onmap").onclick = () => {
     const wasFull = isMobile() && $("#side").classList.contains("expanded");
@@ -902,8 +933,9 @@ document.addEventListener("click", (e) => {
 $("#list").addEventListener("click", (e) => {
   const card = e.target.closest(".card");
   if (!card) return;
-  if (isMobile() || card.dataset.id === activeId) { activeId = card.dataset.id; openSheet(card.dataset.id); }
-  else focus(card.dataset.id, true);
+  const id = card.dataset.id;
+  if (isMobile()) { activeId = id; openSheet(id); }
+  else { openSheet(id); focus(id, true); }        // ordinateur : fiche dans le tiroir + carte centrée
 });
 $("#list").addEventListener("dblclick", (e) => { const c = e.target.closest(".card"); if (c) openSheet(c.dataset.id); });
 $("#compare").addEventListener("click", (e) => {
