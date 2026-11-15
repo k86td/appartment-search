@@ -223,19 +223,63 @@
   #compare img { width: 160px; height: 110px; object-fit: cover; border-radius: 10px; }
   #compare button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 3px 8px; }
 
+  .grip, .mobile-only { display: none; }
   @media (max-width: 720px) {
-    #side { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 62vh; border-radius: 16px 16px 0 0; }
+    body { height: 100dvh; }
+    .mobile-only { display: inline-flex; }
+    #side { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 46dvh; border-radius: 18px 18px 0 0;
+            border-bottom: none; transition: height .25s ease, transform .25s ease; }
+    #side.expanded { height: calc(100dvh - 56px); }
     body.collapsed #side { transform: translateY(100%); }
+    .grip { display: block; flex: none; width: 100%; height: 22px; border: none; background: none; padding: 0;
+            position: relative; cursor: grab; touch-action: none; }
+    .grip::after { content: ""; position: absolute; left: 50%; top: 8px; width: 40px; height: 5px; margin-left: -20px;
+                   border-radius: 999px; background: var(--line); }
+    .head { padding: 0 12px 8px; }
+    .search { margin: 0 12px; height: 38px; }
+    .search input { font-size: 16px; }              /* évite le zoom automatique d'iOS */
+    .seg { margin: 8px 12px 0; }
+    .seg button { font-size: 12px; padding: 6px 0; }
+    .seg button i { display: none; }
+    #morefilters { display: none; }
+    #side.showfilters #morefilters { display: block; }
+    .filters { padding: 8px 12px; }
+    .sizes { padding: 0 12px 8px; }
+    .listhead { padding: 8px 12px; }
+    #list { padding: 6px 6px 10px; }
+    .card { grid-template-columns: 84px 1fr; gap: 10px; }
+    .thumb { width: 84px; height: 72px; }
+    .mk { opacity: .75; width: 32px; height: 32px; }
+    .chip input { font-size: 16px; }
     .leaflet-top.leaflet-left { left: 0; }
-    #compare { left: 8px; right: 8px; }
+    body.collapsed .leaflet-top.leaflet-left { top: 52px; }
+    .mapctl { font-size: 12px; padding: 3px 4px 3px 10px; }
+    #cmpbar { margin: 0 8px 8px; }
+    /* Fiche en plein écran */
+    #modal { align-items: stretch; backdrop-filter: none; }
+    #sheet { width: 100vw; max-height: none; height: 100dvh; border-radius: 0; padding: 0 14px 24px; }
+    #sheet header { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 10px 0 8px;
+                    margin: 0 -2px 6px; flex-wrap: wrap; }
+    #sheet h2 { font-size: 16px; flex-basis: 100%; order: -1; margin-bottom: 4px; }
+    #sheet header .grow-m { flex: 1; }
+    #sheet .times { flex-wrap: wrap; gap: 14px; }
+    #gallery { grid-template-columns: 1fr 1fr; gap: 4px; }
+    #gallery img { height: 120px; }
+    #compare { left: 6px; right: 6px; bottom: 6px; top: 60px; max-height: none; z-index: 2500; }
+    #compare img { width: 120px; height: 84px; }
+    .zbtn { width: 40px; height: 40px; }
+    #zprev { left: 8px; } #znext { right: 8px; }
+    #zoom img { max-width: 100vw; max-height: 80vh; border-radius: 0; }
   }
 </style>
 </head>
 <body>
 <aside id="side">
+  <button class="grip" id="grip" aria-label="Agrandir / réduire la liste"></button>
   <div class="head">
     <h1>Appartements</h1><span class="count" id="count"></span>
     <span class="grow"></span>
+    <button class="chip mobile-only" id="ftoggle"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>Filtres<span id="fcount"></span></button>
     <button class="icon-btn" id="collapse" title="Masquer le panneau ( [ )"><svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
   </div>
   <label class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -246,6 +290,7 @@
     <button data-v="aime">♥ Aimées <i></i></button>
     <button data-v="cache">Cachées <i></i></button>
   </div>
+  <div id="morefilters">
   <div class="filters" id="filters">
     <label class="chip" id="pricechip"><span class="muted">≤</span><input id="maxprice" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Prix max" size="7"><span class="muted">$</span></label>
     <label class="chip" id="tripchip"><select id="tripkey"><option value="">Trajet max</option></select>
@@ -256,6 +301,7 @@
   <div class="filters" style="padding-top:0" id="lieuchip" hidden>
     <span class="chip on lieu"><svg class="i" style="width:14px;height:14px"><use href="#ic-pin"/></svg><span id="lieutxt" class="ell"></span><span id="lieun" style="flex:none"></span>
       <button class="icon-btn" id="lieuclear" style="width:20px;height:20px;color:inherit" title="Retirer"><svg class="i" style="width:12px;height:12px"><use href="#ic-close"/></svg></button></span>
+  </div>
   </div>
   <div class="listhead">
     <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
@@ -548,6 +594,9 @@ function syncControls() {
   $$("#sizes .chip").forEach((c) => c.classList.toggle("on", state.sizes.includes(c.dataset.size)));
   $("#pricechip").classList.toggle("on", !!state.maxprice);
   $("#tripchip").classList.toggle("on", !!(state.tripkey && state.tripmax));
+  const nf = (state.maxprice ? 1 : 0) + (state.tripkey && state.tripmax ? 1 : 0) + state.sizes.length + (state.lieu ? 1 : 0);
+  $("#fcount").textContent = nf ? ` · ${nf}` : "";
+  $("#ftoggle").classList.toggle("on", nf > 0);
   const g = state.lieu && groups.get(state.lieu);
   $("#lieuchip").hidden = !state.lieu;
   if (state.lieu) {
@@ -574,13 +623,15 @@ function focus(id, pan) {
   el?.classList.add("active");
   refreshMarker(id);
   if (state.collapsed && !pan) toggleSide(false);
+  if (!pan && isMobile()) $("#side").classList.remove("expanded");
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   const l = byId[id];
   if (pan && l.latitude != null) {
     // Centre dans la partie visible de la carte (à droite du panneau).
     const z = Math.max(map.getZoom(), 15);
-    const off = state.collapsed || innerWidth <= 720 ? 0 : 222;
-    map.setView(map.unproject(map.project([l.latitude, l.longitude], z).subtract([off, 0]), z), z, { animate: true });
+    const side = $("#side");
+    const off = state.collapsed ? [0, 0] : isMobile() ? [0, -side.offsetHeight / 2] : [222, 0];
+    map.setView(map.unproject(map.project([l.latitude, l.longitude], z).subtract(off), z), z, { animate: true });
   }
 }
 
@@ -600,7 +651,8 @@ function contactHtml(l) {
 function openSheet(id) {
   const l = byId[id];
   $("#sheet").innerHTML = `
-    <header><h2>${esc(l.titre)}</h2>${markButtons(l)}
+    <header><h2>${esc(l.titre)}</h2><span class="grow-m"></span>${markButtons(l)}
+      <button class="icon-btn" id="onmap" title="Voir sur la carte">${ICONS.pin}</button>
       <a class="icon-btn" href="${esc(l.url)}" target="_blank" rel="noopener" title="Voir l'annonce">${ICONS.ext}</a>
       <button class="icon-btn" id="close" title="Fermer (Échap)">${ICONS.close}</button></header>
     <div class="line1"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
@@ -618,6 +670,13 @@ function openSheet(id) {
     <div id="desc">${esc(l.description || "")}</div>`;
   $("#modal").classList.add("open");
   $("#close").onclick = () => $("#modal").classList.remove("open");
+  $("#onmap").onclick = () => {
+    $("#modal").classList.remove("open");
+    if (isMobile() && $("#side").classList.contains("expanded")) {
+      $("#side").classList.remove("expanded");
+      setTimeout(() => focus(id, true), 280);          // attendre la fin de l'animation du panneau
+    } else focus(id, true);
+  };
 }
 
 function renderCompare() {
@@ -661,7 +720,8 @@ document.addEventListener("click", (e) => {
 $("#list").addEventListener("click", (e) => {
   const card = e.target.closest(".card");
   if (!card) return;
-  if (card.dataset.id === activeId) openSheet(card.dataset.id); else focus(card.dataset.id, true);
+  if (isMobile() || card.dataset.id === activeId) { activeId = card.dataset.id; openSheet(card.dataset.id); }
+  else focus(card.dataset.id, true);
 });
 $("#list").addEventListener("dblclick", (e) => { const c = e.target.closest(".card"); if (c) openSheet(c.dataset.id); });
 $("#compare").addEventListener("click", (e) => {
@@ -705,6 +765,19 @@ $("#zoom").addEventListener("touchend", (e) => {
   if (Math.abs(dx) > 40) showZoom(zIdx + (dx < 0 ? 1 : -1));
 });
 
+const isMobile = () => matchMedia("(max-width: 720px)").matches;
+$("#grip").onclick = () => $("#side").classList.toggle("expanded");
+// Glisser la poignée vers le haut / le bas pour agrandir / réduire / masquer la liste.
+let gy = null;
+$("#grip").addEventListener("touchstart", (e) => { gy = e.touches[0].clientY; }, { passive: true });
+$("#grip").addEventListener("touchend", (e) => {
+  if (gy == null) return;
+  const dy = e.changedTouches[0].clientY - gy; gy = null;
+  const side = $("#side");
+  if (dy < -30) side.classList.add("expanded");
+  else if (dy > 30) side.classList.contains("expanded") ? side.classList.remove("expanded") : toggleSide(true);
+});
+$("#ftoggle").onclick = () => $("#side").classList.toggle("showfilters");
 const toggleSide = (v) => { state.collapsed = v ?? !state.collapsed; syncControls(); save(); };
 $("#collapse").onclick = () => toggleSide(true);
 $("#open").onclick = () => toggleSide(false);
@@ -839,7 +912,8 @@ async function showIso(value) {
   if (pts.length) map.fitBounds([
     [q(pts.map((p) => p.lat), .05), q(pts.map((p) => p.lng), .05)],
     [q(pts.map((p) => p.lat), .95), q(pts.map((p) => p.lng), .95)]], {
-    paddingTopLeft: [state.collapsed || innerWidth <= 720 ? 20 : 450, 20], paddingBottomRight: [20, 20], maxZoom: 14 });
+    paddingTopLeft: [state.collapsed || isMobile() ? 20 : 450, isMobile() ? 60 : 20],
+    paddingBottomRight: [20, isMobile() && !state.collapsed ? $("#side").offsetHeight + 10 : 20], maxZoom: 14 });
 })().catch((e) => { $("#list").innerHTML = `<div class="empty">Erreur : ${esc(e.message)}</div>`; });
 </script>
 {% endraw %}
