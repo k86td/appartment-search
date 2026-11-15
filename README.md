@@ -22,7 +22,10 @@ appartment-search -c config.toml          # un passage de scraping
 datasette listings.db -m metadata.yml     # interface sur http://localhost:8001
 ```
 
-La requête « nouvelles » dans Datasette affiche une carte (via `datasette-cluster-map`).
+Tables : `listings` (résumé), `details` (page complète en cache : description, images, JSON brut),
+`attributs` (meublé, animaux, chauffage… en format long) et la vue `annonces` qui regroupe tout.
+
+La requête « carte » dans Datasette affiche une carte (via `datasette-cluster-map`).
 
 ## Sites
 
@@ -36,5 +39,6 @@ La requête « nouvelles » dans Datasette affiche une carte (via `datasette-clu
 ## Ajouter un site
 
 1. Créer `appartment_search/scrapers/<site>.py` avec une classe qui hérite de `Scraper` et implémente `scrape() -> list[Listing]`.
+   Optionnel : `fetch_details(source_id, url) -> Details | None` pour ouvrir la page de chaque annonce.
 2. L'enregistrer dans `scrapers/__init__.py`.
 3. Ajouter une section `[scrapers.<site>]` dans `config.toml`.

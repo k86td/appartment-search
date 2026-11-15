@@ -2,16 +2,16 @@ title: Recherche d'appartement
 databases:
   listings:
     tables:
+      annonces:
+        sort_desc: premiere_vue
+        facets: [source, taille, meuble, animaux, chauffage_inclus, actif]
       listings:
         sort_desc: premiere_vue
         facets: [source, taille, actif]
-        hidden: false
+      attributs:
+        facets: [nom, valeur]
     queries:
-      nouvelles:
-        title: Annonces actives avec position
+      carte:
+        title: Annonces actives sur la carte
         sql: |-
-          SELECT l.premiere_vue, l.source, l.titre, l.prix, l.taille,
-                 l.adresse, l.disponible, l.url, g.lat AS latitude, g.lng AS longitude
-          FROM listings l LEFT JOIN geo g ON g.adresse = l.adresse
-          WHERE l.actif = 1
-          ORDER BY l.premiere_vue DESC
+          SELECT * FROM annonces WHERE actif = 1 ORDER BY premiere_vue DESC

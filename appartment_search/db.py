@@ -2,7 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from .models import Listing
+from .models import Details, Listing
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -26,6 +26,43 @@ CREATE TABLE IF NOT EXISTS geo (
     lng       REAL,
     data      TEXT
 );
+
+-- Page complète de chaque annonce, récupérée une seule fois (cache).
+CREATE TABLE IF NOT EXISTS details (
+    listing_id   TEXT PRIMARY KEY REFERENCES listings(id),
+    fetched_at   TEXT NOT NULL,
+    description  TEXT,
+    images       TEXT,            -- JSON : liste d'URLs
+    raw          TEXT             -- JSON : tout ce que la page fournit
+);
+
+-- Attributs en format long : (annonce, attribut) -> valeur. Facile à facetter.
+CREATE TABLE IF NOT EXISTS attributs (
+    listing_id    TEXT NOT NULL REFERENCES listings(id),
+    nom           TEXT NOT NULL,  -- nom canonique : furnished, petsallowed...
+    libelle       TEXT,           -- "Furnished", "Pet Friendly"...
+    valeur        TEXT,           -- "Yes", "No", "611"...
+    valeur_canon  TEXT,           -- "1", "0", "611"...
+    PRIMARY KEY (listing_id, nom)
+);
+
+-- Vue pratique pour Datasette : annonce + description + attributs courants.
+CREATE VIEW IF NOT EXISTS annonces AS
+SELECT
+    l.id, l.source, l.titre, l.prix, l.taille, l.adresse, l.disponible, l.url,
+    l.premiere_vue, l.actif,
+    d.description,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'furnished')          AS meuble,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'petsallowed')        AS animaux,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'heat')               AS chauffage_inclus,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'hydro')              AS hydro_inclus,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'numberparkingspots') AS stationnements,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'laundryinunit')      AS laveuse_secheuse,
+    (SELECT valeur FROM attributs a WHERE a.listing_id = l.id AND a.nom = 'areainfeet')         AS pi2,
+    g.lat AS latitude, g.lng AS longitude
+FROM listings l
+LEFT JOIN details d ON d.listing_id = l.id
+LEFT JOIN geo g ON g.adresse = l.adresse;
 """
 
 
@@ -68,3 +105,36 @@ def upsert(conn: sqlite3.Connection, listings: list[Listing]) -> list[Listing]:
         new.append(l)
     conn.commit()
     return new
+
+
+def pending_details(conn: sqlite3.Connection, source: str, limit: int) -> list[tuple[str, str, str]]:
+    """Annonces actives sans détails en cache : (id, source_id, url).
+    Inclut les nouvelles et celles dont un essai précédent a échoué."""
+    rows = conn.execute(
+        """SELECT l.id, l.url FROM listings l
+           WHERE l.source = ? AND l.actif = 1
+             AND NOT EXISTS (SELECT 1 FROM details d WHERE d.listing_id = l.id)
+           ORDER BY l.premiere_vue DESC LIMIT ?""",
+        (source, limit),
+    )
+    return [(id_, id_.split(":", 1)[1], url) for id_, url in rows]
+
+
+def save_details(conn: sqlite3.Connection, listing_id: str, d: Details) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.execute(
+        "INSERT OR REPLACE INTO details VALUES (?, ?, ?, ?, ?)",
+        (listing_id, now, d.description, json.dumps(d.images),
+         json.dumps(d.raw, ensure_ascii=False)),
+    )
+    conn.execute("DELETE FROM attributs WHERE listing_id = ?", (listing_id,))
+    conn.executemany(
+        "INSERT INTO attributs VALUES (?, ?, ?, ?, ?)",
+        [(listing_id, nom, lib, val, canon) for nom, (lib, val, canon) in d.attributs.items()],
+    )
+    conn.commit()
+
+
+def mark_inactive(conn: sqlite3.Connection, listing_id: str) -> None:
+    conn.execute("UPDATE listings SET actif = 0 WHERE id = ?", (listing_id,))
+    conn.commit()

@@ -7,7 +7,8 @@ database = "listings.db"
 [scrapers.kijiji]
 enabled = true
 max_pages = 5      # par URL ; s'arrête plus tôt si une page est entièrement connue
-delay = 2.0        # secondes entre deux pages
+delay = 2.0        # secondes entre deux requêtes
+max_details = 100  # pages d'annonce ouvertes max par passage (le reste au suivant)
 urls = [
     # Locations long terme, Ville de Québec, plus récentes en premier
     "https://www.kijiji.ca/b-appartement-condo/ville-de-quebec/k0c37l1700124?sort=dateDesc",

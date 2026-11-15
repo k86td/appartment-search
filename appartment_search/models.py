@@ -18,3 +18,13 @@ class Listing:
     @property
     def id(self) -> str:
         return f"{self.source}:{self.source_id}"
+
+
+@dataclass
+class Details:
+    """Tout ce que la page d'une annonce donne. Récupéré une seule fois par annonce."""
+    description: str | None = None
+    images: list[str] = field(default_factory=list)
+    # nom canonique -> (libellé, valeur lisible, valeur canonique)
+    attributs: dict[str, tuple[str | None, str | None, str | None]] = field(default_factory=dict)
+    raw: dict = field(default_factory=dict)

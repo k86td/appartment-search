@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 import requests
 
-from ..models import Listing
+from ..models import Details, Listing
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -22,6 +22,11 @@ class Scraper(ABC):
 
     @abstractmethod
     def scrape(self) -> list[Listing]: ...
+
+    def fetch_details(self, source_id: str, url: str) -> Details | None:
+        """Ouvre la page d'une annonce. None si elle n'existe plus.
+        Par défaut : pas de détails (pour les sites où la liste suffit)."""
+        return None
 
 
 _TAILLE_RE = re.compile(r"\b([1-9])\s*(?:½|1/2|et\s+demi|\.5)", re.IGNORECASE)

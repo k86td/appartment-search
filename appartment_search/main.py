@@ -1,5 +1,6 @@
 import argparse
 import logging
+import time
 import tomllib
 
 from . import db
@@ -29,9 +30,35 @@ def run(config: dict) -> None:
         new = db.upsert(conn, listings)
         log.info("%s : %d annonces, %d nouvelles", name, len(listings), len(new))
 
+        fetch_all_details(conn, scraper, scraper_cfg)
+
         if new:
             for n in notifiers:
                 n.notify(new)
+
+
+def fetch_all_details(conn, scraper, cfg: dict) -> None:
+    """Ouvre chaque annonce pas encore en cache (nouvelles + échecs précédents)."""
+    limit = cfg.get("max_details", 100)
+    delay = cfg.get("delay", 2.0)
+    pending = db.pending_details(conn, scraper.name, limit)
+    ok = gone = 0
+    for listing_id, source_id, url in pending:
+        try:
+            details = scraper.fetch_details(source_id, url)
+        except Exception as e:
+            log.warning("détails %s : %s (réessai au prochain passage)", listing_id, e)
+            continue
+        finally:
+            time.sleep(delay)
+        if details is None:
+            db.mark_inactive(conn, listing_id)
+            gone += 1
+        else:
+            db.save_details(conn, listing_id, details)
+            ok += 1
+    if pending:
+        log.info("%s : %d détails récupérés, %d annonces retirées", scraper.name, ok, gone)
 
 
 def main() -> None:

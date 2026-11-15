@@ -8,7 +8,7 @@ import re
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-from ..models import Listing
+from ..models import Details, Listing
 from .base import Scraper, taille_depuis_texte
 
 log = logging.getLogger(__name__)
@@ -66,12 +66,47 @@ def to_listing(raw: dict) -> Listing:
     )
 
 
-def parse_page(html: str) -> list[dict]:
+def apollo_state(html: str) -> dict:
     m = _NEXT_DATA_RE.search(html)
     if not m:
         raise ValueError("__NEXT_DATA__ introuvable (structure Kijiji changée ?)")
-    state = json.loads(m.group(1))["props"]["pageProps"]["__APOLLO_STATE__"]
+    return json.loads(m.group(1))["props"]["pageProps"]["__APOLLO_STATE__"]
+
+
+def parse_page(html: str) -> list[dict]:
+    state = apollo_state(html)
     return [v for k, v in state.items() if k.startswith("RealEstateListing:")]
+
+
+def resolve_refs(obj, state: dict, depth: int = 0):
+    """Remplace les {"__ref": "Type:id"} d'Apollo par l'objet référencé."""
+    if depth > 6:
+        return obj
+    if isinstance(obj, dict):
+        if set(obj) == {"__ref"} and obj["__ref"] in state:
+            return resolve_refs(state[obj["__ref"]], state, depth + 1)
+        return {k: resolve_refs(v, state, depth + 1) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [resolve_refs(v, state, depth + 1) for v in obj]
+    return obj
+
+
+def to_details(raw: dict, others: dict) -> Details:
+    attributs = {}
+    for a in (raw.get("attributes") or {}).get("all", []):
+        vals = a.get("values") or a.get("canonicalValues") or []
+        canon = a.get("canonicalValues") or []
+        attributs[a["canonicalName"]] = (
+            a.get("name"),
+            ", ".join(vals) or None,
+            ", ".join(canon) or None,
+        )
+    return Details(
+        description=raw.get("description"),
+        images=raw.get("imageUrls") or [],
+        attributs=attributs,
+        raw={"listing": raw, **others},
+    )
 
 
 class KijijiScraper(Scraper):
@@ -101,3 +136,17 @@ class KijijiScraper(Scraper):
                     break
                 time.sleep(delay)
         return list(results.values())
+
+    def fetch_details(self, source_id: str, url: str) -> Details | None:
+        resp = self.session.get(url, timeout=30)
+        if resp.status_code in (404, 410):
+            return None  # annonce retirée
+        resp.raise_for_status()
+        state = apollo_state(resp.text)
+        key = f"RealEstateListing:{source_id}"
+        if key not in state:
+            return None
+        raw = resolve_refs(state[key], state)
+        # Le reste de l'état (profil de l'annonceur, catégories...) est gardé tel quel.
+        others = {k: v for k, v in state.items() if k not in (key, "ROOT_QUERY")}
+        return to_details(raw, {"autres": others})
