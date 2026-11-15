@@ -6,6 +6,9 @@
 <title>Appartements</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 {% raw %}
@@ -47,17 +50,21 @@
   .row h3 { flex: 1; min-width: 0; }
   .cmp { font-size: 12px; color: var(--muted); white-space: nowrap; }
   #map { height: 100vh; }
-  .pin { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
-         padding: 1px 5px; font-size: 11px; font-weight: 700; white-space: nowrap; transform: translate(-50%, -50%);
+  .pin { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 999px;
+         padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; transform: translate(-50%, -50%);
          display: inline-block; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
   .pin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .pin.picked { outline: 2px solid var(--mid); }
-  .cluster { background: var(--accent); color: #fff; border-radius: 999px; font-weight: 700;
-             display: flex; flex-direction: column; align-items: center; justify-content: center;
-             line-height: 1.05; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--panel); }
-  .cluster b { font-size: 13px; }
-  .cluster span { font-size: 9px; font-weight: 600; opacity: .9; }
-  .dest { background: var(--text); color: var(--bg); border-radius: 6px; padding: 2px 6px; font-size: 11px;
+  /* Groupe : même pastille que les prix, avec le nombre en accent. */
+  .cluster { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+             transform: translate(-50%, -50%); background: var(--panel); color: var(--text);
+             border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px 2px 2px;
+             font-size: 11px; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .cluster b { background: var(--accent); color: #fff; border-radius: 999px; min-width: 20px; height: 20px;
+               display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; font-size: 11px; }
+  .cluster span { color: var(--muted); font-weight: 600; }
+  .marker-cluster, .marker-cluster div { background: none !important; }
+  .dest { background: var(--text); color: var(--bg); border-radius: 999px; padding: 2px 6px; font-size: 11px;
           font-weight: 700; display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; }
   /* Fiche détaillée */
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 2000;
@@ -116,23 +123,25 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null, clusterKey = null;
-const map = L.map("map").setView([46.81, -71.27], 12);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, attribution: "&copy; OpenStreetMap"
+const map = L.map("map", { maxZoom: 19 }).setView([46.81, -71.27], 12);
+// Fond vectoriel OpenFreeMap (gratuit, sans clé) : épuré de loin, détaillé en zoomant.
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+L.maplibreGL({
+  style: `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`,
+  attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
 
 // Regroupement : le badge donne le nombre d'annonces et le prix le plus bas.
 const cluster = L.markerClusterGroup({
-  maxClusterRadius: 45,
+  maxClusterRadius: 60,
   showCoverageOnHover: false,
   spiderfyOnMaxZoom: true,        // même adresse : les annonces s'écartent au clic
   iconCreateFunction(c) {
     const kids = c.getAllChildMarkers();
     const prices = kids.map((m) => m.options.prix).filter(Boolean);
-    const size = kids.length < 10 ? 46 : kids.length < 50 ? 52 : 58;
     const min = prices.length ? `dès ${Math.min(...prices)}$` : "";
-    return L.divIcon({ className: "", iconSize: [size, size],
-      html: `<div class="cluster" style="width:${size}px;height:${size}px"><b>${kids.length}</b><span>${min}</span></div>` });
+    return L.divIcon({ className: "", iconSize: null,
+      html: `<span class="cluster"><b>${kids.length}</b>${min ? `<span>${min}</span>` : ""}</span>` });
   },
 }).addTo(map);
 
