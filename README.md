@@ -59,7 +59,7 @@ Page **http://localhost:8001/carte** : liste triable (prix, temps de trajet), ca
 |----------|------|
 | Kijiji   | ✅ (JSON `__NEXT_DATA__` des pages de résultats) |
 | MSI      | ✅ (API WordPress `imedia/v2/catalog`, tout le catalogue en un appel) |
-| Logisco  | à faire |
+| Logisco  | ✅ (`/api/search` du site pour la liste, page de l'unité pour l'adresse et les photos) |
 | Gestipro | à faire |
 
 ## Ajouter un site

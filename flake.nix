@@ -38,7 +38,7 @@
           pyproject = true;
           src = ./.;
           build-system = [ py.hatchling ];
-          dependencies = [ py.requests ];
+          dependencies = [ py.requests py.beautifulsoup4 ];
         };
 
         datasetteEnv = python.withPackages (ps: [ ps.datasette datasette-cluster-map ]);
@@ -122,7 +122,7 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ (python.withPackages (ps: [ ps.requests ps.datasette datasette-cluster-map ])) ];
+          packages = [ (python.withPackages (ps: [ ps.requests ps.beautifulsoup4 ps.datasette datasette-cluster-map ])) ];
         };
       };
     in

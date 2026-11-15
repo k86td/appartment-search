@@ -25,6 +25,11 @@ regions = ["capitale-nationale"]   # slugs du catalogue MSI
 delay = 0                          # tout vient d'un seul appel API
 max_details = 1000
 
+[scrapers.logisco]
+enabled = true
+delay = 1.0          # entre deux pages d'unité
+max_details = 150
+
 [trajets]
 otp_url = "http://localhost:8080/otp/gtfs/v1"
 arrivee = "08:30"        # arrivée visée le prochain mardi (autobus : tient compte des horaires)

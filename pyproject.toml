@@ -5,6 +5,7 @@ description = "Scrape des sites de logement et les expose dans Datasette"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
