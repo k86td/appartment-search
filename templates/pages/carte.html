@@ -371,11 +371,39 @@ const gl = L.maplibreGL({
 }).addTo(map);
 map.on("moveend zoomend", () => requestAnimationFrame(() => { gl._update(); gl.getMaplibreMap().triggerRepaint(); }));
 
+// ---------- Zone de carte réellement visible (le panneau la recouvre en partie) ----------
+function viewPad() {
+  const side = $("#side"), W = innerWidth, H = innerHeight;
+  if (state.collapsed) return { tl: [20, 60], br: [20, 20] };
+  const r = side.getBoundingClientRect();
+  if (isMobile()) return { tl: [20, 60], br: [20, Math.max(20, H - r.top + 10)] };
+  return { tl: [r.right + 20, 20], br: [20, 20] };
+}
+// Centre de la zone visible, en décalage par rapport au centre de la carte (pixels).
+function viewShift() {
+  const { tl, br } = viewPad(), W = map.getSize().x, H = map.getSize().y;
+  return L.point((tl[0] + W - br[0]) / 2 - W / 2, (tl[1] + H - br[1]) / 2 - H / 2);
+}
+// Amène un point dans la zone visible (au centre de celle-ci), au zoom donné ou actuel.
+function showAt(latlng, zoom) {
+  const z = zoom ?? map.getZoom();
+  const target = map.unproject(map.project(latlng, z).subtract(viewShift()), z);
+  map.setView(target, z, { animate: true });
+}
+// Ne bouge la carte que si le point est caché sous le panneau ou hors de l'écran.
+function ensureVisible(latlng) {
+  const { tl, br } = viewPad(), s = map.getSize(), p = map.latLngToContainerPoint(latlng);
+  const inside = p.x >= tl[0] && p.x <= s.x - br[0] && p.y >= tl[1] && p.y <= s.y - br[1];
+  if (!inside) showAt(latlng);
+}
+const afterPanel = (fn) => setTimeout(fn, 280);   // laisse l'animation du panneau finir
+
 // Regroupement : le badge donne le nombre d'annonces et le prix le plus bas.
 const cluster = L.markerClusterGroup({
   maxClusterRadius: 60,
   showCoverageOnHover: false,
   spiderfyOnMaxZoom: false,       // une adresse = un marqueur, rien à écarter
+  zoomToBoundsOnClick: false,     // remplacé par un zoom qui tient compte du panneau (plus bas)
   chunkedLoading: true,
   iconCreateFunction(c) {
     const kids = c.getAllChildMarkers();
@@ -386,6 +414,10 @@ const cluster = L.markerClusterGroup({
       html: `<span class="cluster"><b>${n}</b>${min ? `<span>${min}</span>` : ""}</span>` });
   },
 }).addTo(map);
+cluster.on("clusterclick", (e) => {
+  const { tl, br } = viewPad();
+  map.fitBounds(e.layer.getBounds(), { paddingTopLeft: tl, paddingBottomRight: br, maxZoom: 17 });
+});
 
 // ---------- Marqueurs : un par immeuble (adresse / coordonnées) ----------
 // Un immeuble LOGISCO ou MSI peut avoir 100 unités : un seul marqueur « N · dès X$ »,
@@ -421,7 +453,12 @@ function rebuildMarkers(rows) {
   for (const g of groups.values()) {
     g.marker = L.marker([g.lat, g.lng], { icon: groupIcon(g), n: g.ids.length,
       prix: Math.min(...g.ids.map((id) => byId[id].prix || Infinity)) });
-    g.marker.on("click", () => g.ids.length === 1 ? focus(g.ids[0], false) : setLieu(g.key));
+    g.marker.on("click", () => {
+      const wasHidden = state.collapsed || (isMobile() && $("#side").classList.contains("expanded"));
+      g.ids.length === 1 ? focus(g.ids[0], false) : setLieu(g.key);
+      const ll = L.latLng(g.lat, g.lng);
+      wasHidden ? afterPanel(() => ensureVisible(ll)) : ensureVisible(ll);
+    });
     ms.push(g.marker);
   }
   cluster.addLayers(ms);
@@ -626,13 +663,7 @@ function focus(id, pan) {
   if (!pan && isMobile()) $("#side").classList.remove("expanded");
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   const l = byId[id];
-  if (pan && l.latitude != null) {
-    // Centre dans la partie visible de la carte (à droite du panneau).
-    const z = Math.max(map.getZoom(), 15);
-    const side = $("#side");
-    const off = state.collapsed ? [0, 0] : isMobile() ? [0, -side.offsetHeight / 2] : [222, 0];
-    map.setView(map.unproject(map.project([l.latitude, l.longitude], z).subtract(off), z), z, { animate: true });
-  }
+  if (pan && l.latitude != null) showAt(L.latLng(l.latitude, l.longitude), Math.max(map.getZoom(), 15));
 }
 
 function contactHtml(l) {
@@ -911,9 +942,8 @@ async function showIso(value) {
   const q = (arr, p) => arr.sort((a, b) => a - b)[Math.floor(p * (arr.length - 1))];
   if (pts.length) map.fitBounds([
     [q(pts.map((p) => p.lat), .05), q(pts.map((p) => p.lng), .05)],
-    [q(pts.map((p) => p.lat), .95), q(pts.map((p) => p.lng), .95)]], {
-    paddingTopLeft: [state.collapsed || isMobile() ? 20 : 450, isMobile() ? 60 : 20],
-    paddingBottomRight: [20, isMobile() && !state.collapsed ? $("#side").offsetHeight + 10 : 20], maxZoom: 14 });
+    [q(pts.map((p) => p.lat), .95), q(pts.map((p) => p.lng), .95)]],
+    { paddingTopLeft: viewPad().tl, paddingBottomRight: viewPad().br, maxZoom: 14 });
 })().catch((e) => { $("#list").innerHTML = `<div class="empty">Erreur : ${esc(e.message)}</div>`; });
 </script>
 {% endraw %}
