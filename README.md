@@ -28,6 +28,11 @@ Quand `[trajets]` est configuré et qu'OTP tourne, chaque passage calcule les te
 vers chaque destination (vue `annonces_trajets`). Sans scraper : `appartment-search --trajets-seulement`.
 Pour tout recalculer (ex. après un nouveau graphe) : `DELETE FROM trajets;`.
 
+Isochrones : `appartment-search --isochrones` calcule, pour une grille de points (section
+`[isochrones]`), le temps vers chaque destination. Long la première fois (~5 000 points par
+destination et par mode), mais reprend où il s'était arrêté. Affichage : menu « Isochrone » de `/carte`.
+Pour recalculer : `DELETE FROM isochrones;`.
+
 Relancer `otp-build` quand le RTC change ses horaires (le GTFS est retéléchargé à chaque fois).
 
 ### Avec pip

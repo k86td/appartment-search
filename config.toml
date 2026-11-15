@@ -33,3 +33,10 @@ lng = -71.27458
 nom = "Travail"          # 400 Rue Nolin
 lat = 46.81559
 lng = -71.26786
+
+[isochrones]
+# appartment-search --isochrones : temps vers chaque destination depuis une grille de points.
+bbox = [-71.55, 46.70, -71.05, 47.00]   # ouest, sud, est, nord
+pas_m = 500                             # ~5 000 points par destination et par mode
+modes = ["bus", "velo"]                 # "auto" possible aussi
+paralleles = 4                          # requêtes OTP simultanées

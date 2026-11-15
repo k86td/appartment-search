@@ -3,7 +3,7 @@ import logging
 import time
 import tomllib
 
-from . import db, images, trajets
+from . import db, images, isochrones, trajets
 from .filters import keep
 from .notify import Notifier
 from .scrapers import SCRAPERS
@@ -79,12 +79,20 @@ def main() -> None:
     parser.add_argument("-c", "--config", default="config.toml")
     parser.add_argument("--trajets-seulement", action="store_true",
                         help="ne scrape pas, calcule seulement les temps de trajet manquants")
+    parser.add_argument("--isochrones", action="store_true",
+                        help="calcule la grille d'isochrones (long, à faire une fois ; reprend où il était)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     with open(args.config, "rb") as f:
         config = tomllib.load(f)
-    if args.trajets_seulement:
+    if args.isochrones:
+        t = config.get("trajets", {})
+        conn = db.connect(config.get("database", "listings.db"))
+        trajets.create_tables(conn, t.get("destinations", []))
+        isochrones.calculer(conn, config.get("isochrones", {}), t.get("destinations", []),
+                            t.get("otp_url", "http://localhost:8080/otp/gtfs/v1"), t.get("arrivee", "08:30"))
+    elif args.trajets_seulement:
         trajets.calculer(db.connect(config.get("database", "listings.db")), config.get("trajets", {}))
     else:
         run(config)

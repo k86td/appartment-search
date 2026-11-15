@@ -76,6 +76,9 @@
                              vertical-align: top; }
   #compare th { color: var(--muted); font-weight: 500; white-space: nowrap; }
   #compare img { width: 160px; height: 110px; object-fit: cover; border-radius: 6px; }
+  .legend { background: var(--panel); color: var(--text); padding: 6px 8px; border-radius: 8px;
+            font-size: 12px; line-height: 1.6; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .legend i { display: inline-block; width: 14px; height: 10px; margin-right: 6px; vertical-align: middle; }
   button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--text);
            border-radius: 6px; padding: 3px 8px; cursor: pointer; }
   a { color: var(--accent); }
@@ -87,6 +90,7 @@
     <label>Tri <select id="sort"></select></label>
     <label>Prix max <input id="maxprice" type="number" step="50" placeholder="—"></label>
     <label>Taille <select id="size"><option value="">toutes</option></select></label>
+    <label id="isowrap" hidden>Isochrone <select id="iso"><option value="">aucune</option></select></label>
     <button id="cmpbtn">Comparer (0)</button>
     <span id="count"></span>
   </div>
@@ -270,6 +274,39 @@ document.addEventListener("keydown", (e) => {
 });
 for (const id of ["#sort", "#size", "#maxprice"]) $(id).addEventListener("input", render);
 
+// Isochrones : une cellule colorée par point de la grille.
+const BANDS = [[10, "#1a9850"], [20, "#91cf60"], [30, "#d9ef8b"], [40, "#fee08b"], [50, "#fc8d59"], [60, "#d73027"]];
+const isoLayer = L.layerGroup().addTo(map);
+const isoRenderer = L.canvas({ padding: 0.5 });
+const legend = L.control({ position: "bottomright" });
+legend.onAdd = () => {
+  const div = L.DomUtil.create("div", "legend");
+  let lo = 0;
+  div.innerHTML = BANDS.map(([hi, c]) => { const t = `<i style="background:${c}"></i>${lo}–${hi} min`; lo = hi; return t; }).join("<br>");
+  return div;
+};
+
+async function showIso(value) {
+  isoLayer.clearLayers();
+  legend.remove();
+  if (!value) return;
+  const [destination, mode] = value.split("|");
+  const rows = await get(`${DB}/isochrone.json?_shape=array&destination=${destination}&mode=${mode}`);
+  if (!rows.length) return;
+  const pas = rows[0].pas_m;
+  for (const [lat, lng, min] of JSON.parse(rows[0].points)) {
+    if (min == null) continue;
+    const band = BANDS.find(([hi]) => min <= hi);
+    if (!band) continue;
+    const dlat = pas / 111320 / 2, dlng = pas / (111320 * Math.cos(lat * Math.PI / 180)) / 2;
+    L.rectangle([[lat - dlat, lng - dlng], [lat + dlat, lng + dlng]], {
+      renderer: isoRenderer, stroke: false, fillColor: band[1], fillOpacity: 0.35, interactive: false,
+    }).addTo(isoLayer);
+  }
+  legend.addTo(map);
+}
+$("#iso").addEventListener("input", (e) => showIso(e.target.value));
+
 // Chargement
 (async () => {
   try { dests = await get(`${DB}/destinations.json?_shape=array`); } catch { dests = []; }
@@ -280,6 +317,15 @@ for (const id of ["#sort", "#size", "#maxprice"]) $(id).addEventListener("input"
   $("#sort").innerHTML = sorts.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
   const sizes = [...new Set(listings.map((l) => l.taille).filter(Boolean))].sort();
   $("#size").innerHTML += sizes.map((s) => `<option>${esc(s)}</option>`).join("");
+
+  try {
+    const dispo = await get(`${DB}/isochrones_dispo.json?_shape=array`);
+    const names = Object.fromEntries(dests.map((d) => [d.slug, d.nom]));
+    const modeNames = Object.fromEntries(MODES);
+    $("#iso").innerHTML += dispo.map((r) =>
+      `<option value="${esc(r.destination)}|${esc(r.mode)}">${esc(names[r.destination] || r.destination)} · ${esc(modeNames[r.mode] || r.mode)}</option>`).join("");
+    $("#isowrap").hidden = !dispo.length;
+  } catch { /* pas encore calculées */ }
 
   for (const d of dests)
     L.marker([d.lat, d.lng], { icon: L.divIcon({ className: "", html: `<span class="dest">${esc(d.nom)}</span>` }),
