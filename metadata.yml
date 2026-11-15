@@ -19,22 +19,41 @@ databases:
         facets: [meuble, animaux, chauffage_inclus, electricite_incluse, laveuse_secheuse, type_logement]
     queries:
       carte:
-        title: Annonces actives sur la carte
+        title: Offres actives sur la carte (une ligne par offre, doublons regroupés)
         sql: |-
           SELECT t.*,
+            -- Photos : celles de l'annonce principale, sinon d'une autre annonce de la même offre.
             COALESCE(
               (SELECT json_group_array(COALESCE('/images/' || chemin, url))
-                 FROM (SELECT * FROM images i WHERE i.listing_id = t.id ORDER BY idx)
+                 FROM (SELECT i.* FROM images i WHERE i.listing_id = (
+                         SELECT o2.listing_id FROM offres o2
+                         WHERE o2.offre_id = t.id
+                           AND EXISTS (SELECT 1 FROM images i3 WHERE i3.listing_id = o2.listing_id)
+                         ORDER BY o2.principale DESC LIMIT 1)
+                       ORDER BY i.idx)
                  HAVING count(*) > 0),
               (SELECT json_extract(l.raw, '$.imageUrls') FROM listings l WHERE l.id = t.id)
             ) AS images,
-            c.nom AS contact_nom, c.type AS contact_type, c.telephones, c.courriels,
+            c.nom AS contact_nom, c.type AS contact_type,
+            -- Téléphones / courriels de toutes les annonces de l'offre.
+            (SELECT group_concat(DISTINCT c2.telephones) FROM offres o2 JOIN contacts c2 ON c2.listing_id = o2.listing_id
+              WHERE o2.offre_id = t.id) AS telephones,
+            (SELECT group_concat(DISTINCT c2.courriels) FROM offres o2 JOIN contacts c2 ON c2.listing_id = o2.listing_id
+              WHERE o2.offre_id = t.id) AS courriels,
             c.telephone_partiel, c.site_web, c.profil_url,
-            m.statut AS marque
+            -- Marque de l'offre : « aime » si une de ses annonces est aimée, sinon « cache ».
+            (SELECT CASE WHEN sum(m.statut = 'aime') > 0 THEN 'aime' WHEN count(*) > 0 THEN 'cache' END
+               FROM marques m
+               WHERE m.listing_id = t.id
+                  OR m.listing_id IN (SELECT listing_id FROM offres WHERE offre_id = t.id)) AS marque,
+            (SELECT json_group_array(json_object('id', l2.id, 'source', l2.source, 'url', l2.url, 'prix', l2.prix))
+               FROM offres o2 JOIN listings l2 ON l2.id = o2.listing_id
+               WHERE o2.offre_id = t.id) AS sources
           FROM annonces_trajets t
           LEFT JOIN contacts c ON c.listing_id = t.id
-          LEFT JOIN marques m ON m.listing_id = t.id
-          WHERE t.actif = 1 OR m.statut = 'aime'   -- les aimées restent visibles même retirées
+          LEFT JOIN offres o ON o.listing_id = t.id
+          WHERE (o.listing_id IS NULL OR o.principale = 1)
+            AND (t.actif = 1 OR marque = 'aime')     -- les aimées restent visibles même retirées
           ORDER BY t.premiere_vue DESC
       isochrone:
         title: Grille d'isochrone (une destination, un mode)
@@ -46,12 +65,17 @@ databases:
         title: Isochrones calculées
         sql: SELECT DISTINCT destination, mode FROM isochrones
       marquer:
-        title: Marquer une annonce (aime / cache)
+        title: Marquer une offre (aime / cache) — toutes ses annonces
         write: true
         sql: |-
           INSERT OR REPLACE INTO marques (listing_id, statut, le)
-          VALUES (:listing_id, :statut, datetime('now'))
+          SELECT listing_id, :statut, datetime('now') FROM offres
+          WHERE offre_id = (SELECT offre_id FROM offres WHERE listing_id = :listing_id)
+          UNION SELECT :listing_id, :statut, datetime('now')
       demarquer:
-        title: Retirer la marque d'une annonce
+        title: Retirer la marque d'une offre
         write: true
-        sql: DELETE FROM marques WHERE listing_id = :listing_id
+        sql: |-
+          DELETE FROM marques WHERE listing_id = :listing_id
+             OR listing_id IN (SELECT listing_id FROM offres
+                               WHERE offre_id = (SELECT offre_id FROM offres WHERE listing_id = :listing_id))

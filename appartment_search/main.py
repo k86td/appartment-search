@@ -3,7 +3,7 @@ import logging
 import time
 import tomllib
 
-from . import db, images, isochrones, trajets
+from . import db, dedup, images, isochrones, trajets
 from .filters import keep
 from .notify import Notifier
 from .scrapers import SCRAPERS
@@ -42,6 +42,8 @@ def run(config: dict) -> None:
         if new:
             for n in notifiers:
                 n.notify(new)
+
+    dedup.calculer(conn)
 
     img = config.get("images", {})
     if img.get("enabled", True):
@@ -102,6 +104,7 @@ def main() -> None:
         conn = db.connect(config.get("database", "listings.db"))
         trajets.create_tables(conn, config.get("trajets", {}).get("destinations", []))
         conn.executescript(isochrones.SCHEMA)
+        dedup.calculer(conn)
         db.backfill(conn, {n: SCRAPERS[n](c, set()) for n, c in config.get("scrapers", {}).items() if n in SCRAPERS})
         return
     if args.isochrones:

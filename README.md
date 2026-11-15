@@ -48,6 +48,10 @@ disponibles après le retrait de l'annonce. Les coordonnées de l'annonceur sont
 (nom, type, téléphones et courriels trouvés dans la description, numéro partiel fourni par le site,
 site web, profil).
 
+Doublons : une même offre publiée sur plusieurs sites (même immeuble, même taille, prix à ±3 %,
+numéro d'appartement compatible, sans ambiguïté) est regroupée dans la table `offres` et affichée
+une seule fois dans `/carte`, avec ses sources. Les infos du site du gestionnaire priment.
+
 Tables : `listings` (résumé), `details` (page complète en cache : description, images, JSON brut),
 `attributs` (meublé, animaux, chauffage… en format long) et la vue `annonces` qui regroupe tout.
 

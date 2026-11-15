@@ -53,7 +53,8 @@
             appartment-search --init -c "''${CONFIG:-config.toml}" --db "''${DB:-listings.db}"
             mkdir -p "$img"
             exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} --template-dir ${./templates} \
-              --static images:"$img" "$@"
+              --static images:"$img" \
+              --setting max_returned_rows 50000 --setting sql_time_limit_ms 5000 "$@"
           '';
         };
 

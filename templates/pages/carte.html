@@ -92,6 +92,7 @@
              transform: translateX(calc(100% * var(--k, 0))); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
   .seg button i { font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted); margin-left: 2px; }
   .tag.new { background: var(--accent-soft); color: var(--accent); }
+  .tag.src { background: none; border: 1px solid var(--line); }
 
   .filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; flex: none; }
   .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
@@ -611,6 +612,7 @@ function cardHtml(l, i = -1) {
         ${l.taille ? `<span class="tag">${esc(l.taille)}</span>` : ""}
         ${d ? `<span class="tag">${esc(d)}</span>` : ""}
         ${l._new ? '<span class="tag new">nouveau</span>' : ""}
+        ${sourcesHtml(l)}
         ${l.actif ? "" : '<span class="tag gone">retirée</span>'}</div>
       <div class="title">${esc(l.titre)}</div>
       <div class="addr">${esc(l.adresse || "")}</div>
@@ -708,6 +710,18 @@ function focus(id, pan) {
   if (pan && l.latitude != null) showAt(L.latLng(l.latitude, l.longitude), Math.max(map.getZoom(), 15));
 }
 
+const SOURCES = { kijiji: "Kijiji", msi: "MSI", logisco: "LOGISCO", gestipro: "GestiPro" };
+const srcName = (s) => SOURCES[s] || s;
+// Sites où l'offre est publiée (doublons regroupés), principale en premier.
+function sourcesHtml(l, long = false) {
+  const ss = l._sources;
+  if (long) return `<div class="meta">Publiée sur : ${ss.map((x) =>
+    `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(srcName(x.source))}</a>${
+      x.prix && x.prix !== l.prix ? ` (${x.prix} $)` : ""}`).join(" · ")}</div>`;
+  return ss.length > 1 ? `<span class="tag src" title="Publiée sur ${ss.length} sites">${
+    ss.map((x) => esc(srcName(x.source))).join(" · ")}</span>` : "";
+}
+
 // Caractéristiques au format standard (commun à tous les sites). null = le site ne le dit pas.
 const CARAC = [
   ["meuble", "Meublé"], ["animaux", "Animaux"], ["chauffage_inclus", "Chauffage inclus"],
@@ -737,8 +751,8 @@ function caracHtml(l) {
 }
 
 function contactHtml(l) {
-  const tels = (l.telephones || "").split(", ").filter(Boolean);
-  const mails = (l.courriels || "").split(", ").filter(Boolean);
+  const tels = [...new Set((l.telephones || "").split(/,\s*/).filter(Boolean))];
+  const mails = [...new Set((l.courriels || "").split(/,\s*/).filter(Boolean))];
   const parts = [];
   if (l.contact_nom || l.contact_type) parts.push(`<b>${esc(l.contact_nom || "Annonceur")}</b> (${esc(l.contact_type || "?")})`);
   for (const t of tels) parts.push(`<a href="tel:${esc(t)}">${esc(t)}</a>`);
@@ -800,6 +814,7 @@ function openSheet(id) {
       ${l.superficie_pi2 ? `<span class="tag">${esc(l.superficie_pi2)} pi²</span>` : ""}
       ${l.actif ? "" : '<span class="tag gone">retirée</span>'}</div>
     <div class="meta">${esc(l.adresse || "")}</div>
+    ${sourcesHtml(l, true)}
     ${caracHtml(l)}
     ${contactHtml(l)}
     ${timesHtml(l)}
@@ -828,6 +843,7 @@ function renderCompare() {
     ${line("Taille", (l) => esc(l.taille || "?"))}
     ${line("Superficie", (l) => l.superficie_pi2 ? esc(l.superficie_pi2) + " pi²" : "?")}
     ${line("Adresse", (l) => esc(l.adresse || ""))}
+    ${line("Sites", (l) => l._sources.map((x) => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(srcName(x.source))}</a>`).join(" · "))}
     ${line("Dispo", (l) => esc(l.disponible || "?"))}
     ${CARAC.map(([k, label]) => line(label, (l) => fmtCarac(k, l[k]))).join("")}
     ${line("Contact", (l) => esc(l.contact_nom || "") + " " + (l.telephones || l.telephone_partiel || ""))}`;
@@ -1033,6 +1049,9 @@ async function showIso(value) {
   for (const l of listings) {
     l._txt = `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase();
     l._new = now - Date.parse(l.premiere_vue) < NOUVELLE_MS;
+    try { l._sources = JSON.parse(l.sources || "[]"); } catch { l._sources = []; }
+    if (!l._sources.length) l._sources = [{ id: l.id, source: l.source, url: l.url, prix: l.prix }];
+    l._sources.sort((a, b) => (a.id === l.id ? -1 : b.id === l.id ? 1 : 0));
   }
 
   const sorts = [["premiere_vue", "Plus récentes"], ["prix", "Prix croissant"]];
