@@ -3,7 +3,7 @@ import logging
 import time
 import tomllib
 
-from . import db, trajets
+from . import db, images, trajets
 from .filters import keep
 from .notify import Notifier
 from .scrapers import SCRAPERS
@@ -15,11 +15,16 @@ def run(config: dict) -> None:
     conn = db.connect(config.get("database", "listings.db"))
     notifiers: list[Notifier] = []
     criteria = config.get("filtres", {})
+    scrapers = {
+        name: SCRAPERS[name](cfg, db.known_ids(conn, name))
+        for name, cfg in config.get("scrapers", {}).items()
+    }
+    db.backfill(conn, scrapers)
 
     for name, scraper_cfg in config.get("scrapers", {}).items():
         if not scraper_cfg.get("enabled", True):
             continue
-        scraper = SCRAPERS[name](scraper_cfg, db.known_ids(conn, name))
+        scraper = scrapers[name]
         try:
             listings = scraper.scrape()
         except Exception:
@@ -35,6 +40,11 @@ def run(config: dict) -> None:
         if new:
             for n in notifiers:
                 n.notify(new)
+
+    img = config.get("images", {})
+    if img.get("enabled", True):
+        images.telecharger(conn, img.get("dossier", "images"), scrapers,
+                           img.get("max_par_passage", 1000))
 
     if "trajets" in config:
         trajets.calculer(conn, config["trajets"])

@@ -2,7 +2,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 
-from .models import Details, Listing
+from .models import Contact, Details, Listing
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -44,6 +44,27 @@ CREATE TABLE IF NOT EXISTS attributs (
     valeur        TEXT,           -- "Yes", "No", "611"...
     valeur_canon  TEXT,           -- "1", "0", "611"...
     PRIMARY KEY (listing_id, nom)
+);
+
+-- Coordonnées de l'annonceur, telles que la page les donne.
+CREATE TABLE IF NOT EXISTS contacts (
+    listing_id         TEXT PRIMARY KEY REFERENCES listings(id),
+    nom                TEXT,
+    type               TEXT,
+    telephones         TEXT,   -- trouvés dans la description, séparés par ", "
+    courriels          TEXT,
+    telephone_partiel  TEXT,   -- numéro masqué fourni par le site
+    site_web           TEXT,
+    profil_url         TEXT
+);
+
+-- Photos : URL d'origine + copie locale (chemin relatif au dossier d'images).
+CREATE TABLE IF NOT EXISTS images (
+    listing_id  TEXT NOT NULL REFERENCES listings(id),
+    idx         INTEGER NOT NULL,
+    url         TEXT NOT NULL,
+    chemin      TEXT,          -- NULL tant que pas téléchargée
+    PRIMARY KEY (listing_id, idx)
 );
 
 -- Vue pratique pour Datasette : annonce + description + attributs courants.
@@ -127,6 +148,12 @@ def save_details(conn: sqlite3.Connection, listing_id: str, d: Details) -> None:
         (listing_id, now, d.description, json.dumps(d.images),
          json.dumps(d.raw, ensure_ascii=False)),
     )
+    if d.contact:
+        save_contact(conn, listing_id, d.contact)
+    conn.executemany(
+        "INSERT OR IGNORE INTO images (listing_id, idx, url) VALUES (?, ?, ?)",
+        [(listing_id, i, u) for i, u in enumerate(d.images)],
+    )
     conn.execute("DELETE FROM attributs WHERE listing_id = ?", (listing_id,))
     conn.executemany(
         "INSERT INTO attributs VALUES (?, ?, ?, ?, ?)",
@@ -137,4 +164,30 @@ def save_details(conn: sqlite3.Connection, listing_id: str, d: Details) -> None:
 
 def mark_inactive(conn: sqlite3.Connection, listing_id: str) -> None:
     conn.execute("UPDATE listings SET actif = 0 WHERE id = ?", (listing_id,))
+    conn.commit()
+
+
+def save_contact(conn: sqlite3.Connection, listing_id: str, c: Contact) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (listing_id, c.nom, c.type, ", ".join(c.telephones) or None,
+         ", ".join(c.courriels) or None, c.telephone_partiel, c.site_web, c.profil_url),
+    )
+
+
+def backfill(conn: sqlite3.Connection, scrapers: dict) -> None:
+    """Remplit contacts et images pour les annonces dont les détails ont été
+    récupérés avant l'ajout de ces tables (à partir de details.raw)."""
+    rows = conn.execute(
+        """SELECT d.listing_id, d.images, d.raw FROM details d
+           WHERE NOT EXISTS (SELECT 1 FROM contacts c WHERE c.listing_id = d.listing_id)"""
+    ).fetchall()
+    for listing_id, images, raw in rows:
+        scraper = scrapers.get(listing_id.split(":", 1)[0])
+        contact = scraper.contact_from_raw(json.loads(raw or "{}")) if scraper else None
+        save_contact(conn, listing_id, contact or Contact())
+        conn.executemany(
+            "INSERT OR IGNORE INTO images (listing_id, idx, url) VALUES (?, ?, ?)",
+            [(listing_id, i, u) for i, u in enumerate(json.loads(images or "[]"))],
+        )
     conn.commit()

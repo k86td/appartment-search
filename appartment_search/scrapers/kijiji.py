@@ -8,8 +8,8 @@ import re
 import time
 from urllib.parse import urlsplit, urlunsplit
 
-from ..models import Details, Listing
-from .base import Scraper, taille_depuis_texte
+from ..models import Contact, Details, Listing
+from .base import Scraper, courriels, taille_depuis_texte, telephones
 
 log = logging.getLogger(__name__)
 
@@ -91,6 +91,26 @@ def resolve_refs(obj, state: dict, depth: int = 0):
     return obj
 
 
+def to_contact(raw: dict, state: dict) -> Contact:
+    """Infos de l'annonceur visibles sur la page. Kijiji masque la fin du numéro
+    (bouton « afficher ») : on garde le préfixe et on cherche le numéro complet
+    dans la description, où les proprios le mettent souvent."""
+    poster = raw.get("posterInfo") or {}
+    pid = poster.get("posterId")
+    profil = next((v for k, v in state.items() if pid and k.endswith(f":{pid}")), {})
+    path = profil.get("profilePath")
+    desc = raw.get("description")
+    return Contact(
+        nom=profil.get("name"),
+        type={"FSBO": "particulier", "KMB": "professionnel"}.get(poster.get("sellerType"), poster.get("sellerType")),
+        telephones=telephones(desc),
+        courriels=courriels(desc),
+        telephone_partiel=poster.get("phoneNumber"),
+        site_web=poster.get("websiteUrl") or profil.get("websiteUrl"),
+        profil_url=f"https://www.kijiji.ca{path}" if path else None,
+    )
+
+
 def to_details(raw: dict, others: dict) -> Details:
     attributs = {}
     for a in (raw.get("attributes") or {}).get("all", []):
@@ -105,6 +125,7 @@ def to_details(raw: dict, others: dict) -> Details:
         description=raw.get("description"),
         images=raw.get("imageUrls") or [],
         attributs=attributs,
+        contact=to_contact(raw, others.get("autres", {})),
         raw={"listing": raw, **others},
     )
 
@@ -136,6 +157,15 @@ class KijijiScraper(Scraper):
                     break
                 time.sleep(delay)
         return list(results.values())
+
+    def contact_from_raw(self, raw: dict) -> Contact | None:
+        if "listing" not in raw:
+            return None
+        return to_contact(raw["listing"], raw.get("autres", {}))
+
+    def image_download_url(self, url: str) -> str:
+        rule = self.config.get("image_rule", "kijijica-1600-webp")
+        return url.split("?", 1)[0] + f"?rule={rule}" if "media.kijiji.ca" in url else url
 
     def fetch_details(self, source_id: str, url: str) -> Details | None:
         resp = self.session.get(url, timeout=30)

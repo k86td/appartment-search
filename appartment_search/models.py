@@ -27,4 +27,16 @@ class Details:
     images: list[str] = field(default_factory=list)
     # nom canonique -> (libellé, valeur lisible, valeur canonique)
     attributs: dict[str, tuple[str | None, str | None, str | None]] = field(default_factory=dict)
+    contact: "Contact | None" = None
     raw: dict = field(default_factory=dict)
+
+
+@dataclass
+class Contact:
+    nom: str | None = None
+    type: str | None = None             # particulier, professionnel...
+    telephones: list[str] = field(default_factory=list)
+    courriels: list[str] = field(default_factory=list)
+    telephone_partiel: str | None = None  # ex. Kijiji masque la fin : 418874xxxx
+    site_web: str | None = None
+    profil_url: str | None = None

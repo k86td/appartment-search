@@ -48,7 +48,10 @@
           name = "appartment-search-ui";
           runtimeInputs = [ datasetteEnv ];
           text = ''
-            exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} --template-dir ${./templates} "$@"
+            img="''${IMAGES:-images}"
+            mkdir -p "$img"
+            exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} --template-dir ${./templates} \
+              --static images:"$img" "$@"
           '';
         };
 

@@ -36,6 +36,7 @@
              text-overflow: ellipsis; white-space: nowrap; }
   .meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .price { font-weight: 700; }
+  .contact { white-space: normal; margin: 4px 0; }
   .times { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 1px 8px; font-size: 12px; margin-top: 4px; }
   .times .h { color: var(--muted); }
   .t-good { color: var(--good); } .t-mid { color: var(--mid); } .t-bad { color: var(--bad); }
@@ -182,6 +183,19 @@ function focus(id, pan) {
   document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
+function contactHtml(l) {
+  const tels = (l.telephones || "").split(", ").filter(Boolean);
+  const mails = (l.courriels || "").split(", ").filter(Boolean);
+  const parts = [];
+  if (l.contact_nom || l.contact_type) parts.push(`<b>${esc(l.contact_nom || "Annonceur")}</b> (${esc(l.contact_type || "?")})`);
+  for (const t of tels) parts.push(`<a href="tel:${esc(t)}">${esc(t)}</a>`);
+  for (const m of mails) parts.push(`<a href="mailto:${esc(m)}">${esc(m)}</a>`);
+  if (!tels.length && l.telephone_partiel) parts.push(`tél. masqué : ${esc(l.telephone_partiel)}`);
+  if (l.site_web) parts.push(`<a href="${esc(l.site_web)}" target="_blank" rel="noopener">site web</a>`);
+  if (l.profil_url) parts.push(`<a href="${esc(l.profil_url)}" target="_blank" rel="noopener">profil</a>`);
+  return parts.length ? `<div class="meta contact">Contact : ${parts.join(" · ")}</div>` : "";
+}
+
 function openSheet(id) {
   const l = listings.find((x) => x.id === id);
   $("#sheet").innerHTML = `
@@ -192,6 +206,7 @@ function openSheet(id) {
     <div class="meta">Meublé : ${esc(l.meuble || "?")} · Animaux : ${esc(l.animaux || "?")}
       · Chauffage : ${esc(l.chauffage_inclus || "?")} · Hydro : ${esc(l.hydro_inclus || "?")}
       · Stationnements : ${esc(l.stationnements || "?")} · ${esc(l.pi2 || "?")} pi²</div>
+    ${contactHtml(l)}
     ${timesHtml(l)}
     <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
     <div id="desc">${esc(l.description || "")}</div>`;
@@ -215,7 +230,8 @@ function renderCompare() {
     ${line("Meublé", (l) => esc(l.meuble || "?"))}
     ${line("Animaux", (l) => esc(l.animaux || "?"))}
     ${line("Chauffage / Hydro", (l) => esc(l.chauffage_inclus || "?") + " / " + esc(l.hydro_inclus || "?"))}
-    ${line("Stationnements", (l) => esc(l.stationnements || "?"))}`;
+    ${line("Stationnements", (l) => esc(l.stationnements || "?"))}
+    ${line("Contact", (l) => esc(l.contact_nom || "") + " " + (l.telephones || l.telephone_partiel || ""))}`;
   for (const d of dests) for (const [m, n] of MODES)
     html += line(`${esc(d.nom)} · ${n}`, (l) => `<span class="${timeClass(l[`${d.slug}_${m}`])}">${fmt(l[`${d.slug}_${m}`])}</span>`);
   $("#compare").innerHTML = html + "</table>";

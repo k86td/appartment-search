@@ -21,7 +21,9 @@ nix run .#otp-build   # télécharge OSM + GTFS du RTC, construit le graphe dans
 nix run .#otp-serve   # API sur http://localhost:8080
 ```
 
-Variables : `OTP_MEM` (défaut `4G`), `OTP_DIR` (défaut `otp-data`), `OTP_PORT`, `OTP_BBOX`.
+Variables UI : `DB` (défaut `listings.db`), `IMAGES` (défaut `images`).
+
+Variables OTP : `OTP_MEM` (défaut `4G`), `OTP_DIR` (défaut `otp-data`), `OTP_PORT`, `OTP_BBOX`.
 Quand `[trajets]` est configuré et qu'OTP tourne, chaque passage calcule les temps bus / vélo / auto
 vers chaque destination (vue `annonces_trajets`). Sans scraper : `appartment-search --trajets-seulement`.
 Pour tout recalculer (ex. après un nouveau graphe) : `DELETE FROM trajets;`.
@@ -35,6 +37,11 @@ pip install -e '.[ui]'
 appartment-search -c config.toml          # un passage de scraping
 datasette listings.db -m metadata.yml     # interface sur http://localhost:8001
 ```
+
+Les photos sont copiées dans `./images/` (servies par Datasette sous `/images/`), donc elles restent
+disponibles après le retrait de l'annonce. Les coordonnées de l'annonceur sont dans `contacts`
+(nom, type, téléphones et courriels trouvés dans la description, numéro partiel fourni par le site,
+site web, profil).
 
 Tables : `listings` (résumé), `details` (page complète en cache : description, images, JSON brut),
 `attributs` (meublé, animaux, chauffage… en format long) et la vue `annonces` qui regroupe tout.

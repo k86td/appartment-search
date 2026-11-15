@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 
 import requests
 
-from ..models import Details, Listing
+from ..models import Contact, Details, Listing
 
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -27,6 +27,32 @@ class Scraper(ABC):
         """Ouvre la page d'une annonce. None si elle n'existe plus.
         Par défaut : pas de détails (pour les sites où la liste suffit)."""
         return None
+
+    def contact_from_raw(self, raw: dict) -> Contact | None:
+        """Reconstruit le contact depuis details.raw (rattrapage des anciennes annonces)."""
+        return None
+
+    def image_download_url(self, url: str) -> str:
+        """URL à télécharger pour le cache local (ex. meilleure résolution)."""
+        return url
+
+
+_PHONE_RE = re.compile(r"(?<!\d)(?:\+?1[\s.-]?)?\(?([2-9]\d{2})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})(?!\d)")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def telephones(texte: str | None) -> list[str]:
+    """Numéros nord-américains trouvés dans un texte, normalisés 418-555-1234."""
+    out = []
+    for a, b, c in _PHONE_RE.findall(texte or ""):
+        n = f"{a}-{b}-{c}"
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def courriels(texte: str | None) -> list[str]:
+    return list(dict.fromkeys(_EMAIL_RE.findall(texte or "")))
 
 
 _TAILLE_RE = re.compile(r"\b([1-9])\s*(?:½|1/2|et\s+demi|\.5)", re.IGNORECASE)

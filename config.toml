@@ -1,5 +1,9 @@
 database = "listings.db"
 
+[images]
+dossier = "images"       # copie locale des photos (servie par Datasette sous /images/)
+max_par_passage = 1000
+
 [filtres]
 # prix_max = 1400
 # tailles = ["3½", "4½"]
@@ -8,6 +12,7 @@ database = "listings.db"
 enabled = true
 max_pages = 5      # par URL ; s'arrête plus tôt si une page est entièrement connue
 delay = 2.0        # secondes entre deux requêtes
+image_rule = "kijijica-1600-webp"  # résolution des photos en cache
 max_details = 100  # pages d'annonce ouvertes max par passage (le reste au suivant)
 urls = [
     # Locations long terme, Ville de Québec, plus récentes en premier

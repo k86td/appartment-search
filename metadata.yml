@@ -13,10 +13,16 @@ databases:
         facets: [source, taille, actif]
       attributs:
         facets: [nom, valeur]
+      contacts:
+        facets: [type]
     queries:
       carte:
         title: Annonces actives sur la carte
         sql: |-
-          SELECT t.*, d.images
-          FROM annonces_trajets t LEFT JOIN details d ON d.listing_id = t.id
+          SELECT t.*,
+            (SELECT json_group_array(COALESCE('/images/' || chemin, url))
+               FROM (SELECT * FROM images i WHERE i.listing_id = t.id ORDER BY idx)) AS images,
+            c.nom AS contact_nom, c.type AS contact_type, c.telephones, c.courriels,
+            c.telephone_partiel, c.site_web, c.profil_url
+          FROM annonces_trajets t LEFT JOIN contacts c ON c.listing_id = t.id
           WHERE t.actif = 1 ORDER BY t.premiere_vue DESC
