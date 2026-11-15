@@ -130,6 +130,9 @@
       };
     in
     {
+      # Module NixOS : voir nix/module.nix (scraping aux 6 h, interface, OTP, Tailscale).
+      nixosModules.default = import ./nix/module.nix self;
+
       packages = forAllSystems (s: (perSystem s).packages);
       apps = forAllSystems (s: (perSystem s).apps);
       devShells = forAllSystems (s: (perSystem s).devShells);

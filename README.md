@@ -35,6 +35,41 @@ Pour recalculer : `DELETE FROM isochrones;`.
 
 Relancer `otp-build` quand le RTC change ses horaires (le GTFS est retéléchargé à chaque fois).
 
+### Sur NixOS (service permanent)
+
+```nix
+# flake.nix de ta config
+inputs.appartment-search.url = "github:k86td/appartment-search";
+
+# configuration du système
+imports = [ inputs.appartment-search.nixosModules.default ];
+services.appartment-search = {
+  enable = true;
+  tailscale.enable = true;          # https://<machine>.<tailnet>.ts.net
+  settings = {
+    filtres.prix_max = 1500;
+    trajets.destinations = [
+      { nom = "ULaval";  lat = 46.77866; lng = -71.27458; }
+      { nom = "Travail"; lat = 46.81559; lng = -71.26786; }
+    ];
+  };
+};
+```
+
+Services créés :
+
+| Unité | Rôle |
+|---|---|
+| `appartment-search-scrape.timer` | scraping aux 6 h (`schedule`), + détails, photos, trajets, dédup |
+| `appartment-search-ui` | interface sur `127.0.0.1:8001` (`ui.port`) |
+| `appartment-search-otp` | OpenTripPlanner ; construit le graphe au 1er démarrage |
+| `appartment-search-otp-build.timer` | reconstruit le graphe chaque mois (horaires RTC) |
+| `appartment-search-isochrones` | à lancer à la main : `systemctl start appartment-search-isochrones` |
+| `appartment-search-tailscale` | `tailscale serve` vers l'interface (si `tailscale.enable`) |
+
+Données dans `/var/lib/appartment-search` (`dataDir`). Lancer un passage tout de suite :
+`systemctl start appartment-search-scrape` ; suivre : `journalctl -fu appartment-search-scrape`.
+
 ### Avec pip
 
 ```sh
