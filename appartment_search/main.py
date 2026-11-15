@@ -31,7 +31,7 @@ def run(config: dict) -> None:
             log.exception("échec du scraper %s", name)
             continue
 
-        if scraper.complet:
+        if scraper.catalogue_complet():
             db.mark_missing_inactive(conn, name, {l.id for l in listings})
         listings = [l for l in listings if keep(l, criteria)]
         new = db.upsert(conn, listings)

@@ -73,6 +73,14 @@ def apollo_state(html: str) -> dict:
     return json.loads(m.group(1))["props"]["pageProps"]["__APOLLO_STATE__"]
 
 
+def _pagination(state: dict) -> dict:
+    root = state.get("ROOT_QUERY") or {}
+    for k, v in root.items():
+        if k.startswith("searchResultsPageByUrl") and isinstance(v, dict):
+            return v.get("pagination") or {}
+    return {}
+
+
 def parse_page(html: str) -> list[dict]:
     state = apollo_state(html)
     return [v for k, v in state.items() if k.startswith("RealEstateListing:")]
@@ -134,29 +142,51 @@ class KijijiScraper(Scraper):
     name = "kijiji"
 
     def scrape(self) -> list[Listing]:
+        """Parcourt TOUTES les pages de chaque recherche. Si tout s'est bien passé,
+        une annonce absente des résultats est considérée retirée (voir catalogue_complet)."""
         urls = self.config.get("urls", [])
-        max_pages = self.config.get("max_pages", 5)
+        max_pages = self.config.get("max_pages", 50)
         delay = self.config.get("delay", 2.0)
 
         results: dict[str, Listing] = {}
+        attendu = 0
+        self._complet = bool(urls)
         for base in urls:
-            for page in range(1, max_pages + 1):
+            page, derniere = 1, 1
+            while page <= derniere:
                 url = page_url(base, page)
-                resp = self.session.get(url, timeout=30)
-                resp.raise_for_status()
-                raws = parse_page(resp.text)
-                if not raws:
+                try:
+                    resp = self.session.get(url, timeout=30)
+                    resp.raise_for_status()
+                    state = apollo_state(resp.text)
+                except Exception as e:
+                    log.warning("kijiji %s : %s (parcours incomplet, rien ne sera marqué retiré)", url, e)
+                    self._complet = False
                     break
-                listings = [to_listing(r) for r in raws]
+                if page == 1:
+                    pag = _pagination(state)
+                    total, limite = pag.get("totalCount") or 0, pag.get("limit") or 40
+                    attendu += total
+                    derniere = -(-total // limite)
+                    if derniere > max_pages:
+                        log.warning("kijiji : %d pages, max_pages=%d (parcours incomplet)", derniere, max_pages)
+                        derniere, self._complet = max_pages, False
+                listings = [to_listing(v) for k, v in state.items() if k.startswith("RealEstateListing:")]
                 for l in listings:
                     results[l.id] = l
-                log.info("kijiji %s : %d annonces", url, len(listings))
+                log.info("kijiji page %d/%d : %d annonces", page, derniere, len(listings))
+                page += 1
+                if page <= derniere:
+                    time.sleep(delay)
 
-                # Triées par date : si toute la page est déjà connue, on arrête.
-                if all(l.id in self.known_ids for l in listings):
-                    break
-                time.sleep(delay)
+        # Garde-fou : si on a vu nettement moins d'annonces qu'annoncé, on ne retire rien.
+        if self._complet and len(results) < 0.9 * attendu:
+            log.warning("kijiji : %d annonces vues sur %d annoncées (parcours incomplet)", len(results), attendu)
+            self._complet = False
         return list(results.values())
+
+    def catalogue_complet(self) -> bool:
+        return getattr(self, "_complet", False)
 
     def contact_from_raw(self, raw: dict) -> Contact | None:
         if "listing" not in raw:

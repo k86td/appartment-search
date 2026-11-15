@@ -27,6 +27,10 @@ class Scraper(ABC):
     @abstractmethod
     def scrape(self) -> list[Listing]: ...
 
+    def catalogue_complet(self) -> bool:
+        """Le dernier scrape() a-t-il vu tout le site ? (sinon on ne retire rien)"""
+        return self.complet
+
     def fetch_details(self, source_id: str, url: str) -> Details | None:
         """Ouvre la page d'une annonce. None si elle n'existe plus.
         Par défaut : pas de détails (pour les sites où la liste suffit)."""
