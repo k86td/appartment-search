@@ -368,7 +368,7 @@ function refreshMarker(id) {
 }
 
 function setLieu(key) {
-  state.lieu = state.lieu === key ? "" : key;
+  state.lieu = state.lieu === key ? "" : key;   // re-cliquer le même immeuble retire le filtre
   activeId = null;
   render();
   $("#list").scrollTop = 0;
@@ -542,6 +542,8 @@ function syncControls() {
 
 // Sélection : seules les deux cartes et les deux marqueurs concernés changent (pas de re-rendu complet).
 function focus(id, pan) {
+  // Annonce hors de l'immeuble sélectionné : on quitte le filtre « immeuble » d'abord.
+  if (state.lieu && geoKey(byId[id]) !== state.lieu) { state.lieu = ""; activeId = null; render(); }
   const prev = activeId;
   activeId = id;
   if (prev && prev !== id) { cardEl(prev)?.classList.remove("active"); if (byId[prev]) refreshMarker(prev); }
