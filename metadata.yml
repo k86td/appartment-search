@@ -17,4 +17,6 @@ databases:
       carte:
         title: Annonces actives sur la carte
         sql: |-
-          SELECT * FROM annonces_trajets WHERE actif = 1 ORDER BY premiere_vue DESC
+          SELECT t.*, d.images
+          FROM annonces_trajets t LEFT JOIN details d ON d.listing_id = t.id
+          WHERE t.actif = 1 ORDER BY t.premiere_vue DESC

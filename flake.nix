@@ -48,7 +48,7 @@
           name = "appartment-search-ui";
           runtimeInputs = [ datasetteEnv ];
           text = ''
-            exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} "$@"
+            exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} --template-dir ${./templates} "$@"
           '';
         };
 

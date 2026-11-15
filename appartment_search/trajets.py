@@ -83,7 +83,15 @@ def create_tables(conn: sqlite3.Connection, destinations: list[dict]) -> None:
         calcule_le   TEXT NOT NULL,
         PRIMARY KEY (adresse, destination, mode)
     );
+    CREATE TABLE IF NOT EXISTS destinations (
+        slug TEXT PRIMARY KEY, nom TEXT, lat REAL, lng REAL
+    );
+    DELETE FROM destinations;
     """)
+    conn.executemany(
+        "INSERT INTO destinations VALUES (?, ?, ?, ?)",
+        [(slug(d["nom"]), d["nom"], d["lat"], d["lng"]) for d in destinations],
+    )
     # Vue avec une colonne par destination × mode, triable dans Datasette.
     cols = ",\n".join(
         f"(SELECT minutes FROM trajets t WHERE t.adresse = a.adresse "

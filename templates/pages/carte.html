@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appartements</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% raw %}
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66;
+    --line: #e2e2dd; --accent: #2f6fdf; --good: #1f8a4c; --mid: #b7791f; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15171a; --panel: #1d2024; --text: #e8e8e6; --muted: #9a9a95;
+            --line: #2c3036; --accent: #6ea0ff; --good: #4cc27f; --mid: #e0a64a; --bad: #ef6b5e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text);
+         display: grid; grid-template-columns: minmax(380px, 40%) 1fr; height: 100vh; }
+  #side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  #controls { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+              border-bottom: 1px solid var(--line); background: var(--panel); }
+  #controls label { color: var(--muted); font-size: 12px; display: flex; gap: 4px; align-items: center; }
+  select, input { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
+                  background: var(--bg); color: var(--text); }
+  input[type=number] { width: 80px; }
+  #count { margin-left: auto; color: var(--muted); font-size: 12px; }
+  #list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .card { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 8px; border-radius: 10px;
+          background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+  .card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .card img { width: 120px; height: 90px; object-fit: cover; border-radius: 6px; background: var(--line); }
+  .card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .price { font-weight: 700; }
+  .times { display: grid; grid-template-columns: auto repeat(3, 1fr); gap: 1px 8px; font-size: 12px; margin-top: 4px; }
+  .times .h { color: var(--muted); }
+  .t-good { color: var(--good); } .t-mid { color: var(--mid); } .t-bad { color: var(--bad); }
+  .card > div { min-width: 0; }
+  .row { display: flex; gap: 8px; align-items: baseline; }
+  .row h3 { flex: 1; min-width: 0; }
+  .cmp { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  #map { height: 100vh; }
+  .pin { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+         padding: 1px 5px; font-size: 11px; font-weight: 700; white-space: nowrap; transform: translate(-50%, -50%);
+         display: inline-block; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .pin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pin.picked { outline: 2px solid var(--mid); }
+  .dest { background: var(--text); color: var(--bg); border-radius: 6px; padding: 2px 6px; font-size: 11px;
+          font-weight: 700; display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; }
+  /* Fiche détaillée */
+  #modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 2000;
+           align-items: center; justify-content: center; }
+  #modal.open { display: flex; }
+  #sheet { background: var(--panel); width: min(1100px, 94vw); max-height: 92vh; overflow-y: auto;
+           border-radius: 12px; padding: 16px; }
+  #sheet header { display: flex; gap: 12px; align-items: baseline; }
+  #sheet h2 { margin: 0; font-size: 18px; flex: 1; }
+  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; margin: 12px 0; }
+  #gallery img { width: 100%; height: 160px; object-fit: cover; border-radius: 6px; cursor: zoom-in; }
+  #desc { white-space: pre-wrap; color: var(--text); }
+  #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: none; z-index: 3000;
+          align-items: center; justify-content: center; cursor: zoom-out; }
+  #zoom.open { display: flex; }
+  #zoom img { max-width: 96vw; max-height: 94vh; }
+  /* Comparaison */
+  #compare { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1500; background: var(--panel);
+             border-top: 1px solid var(--line); max-height: 45vh; overflow: auto; display: none; }
+  #compare.open { display: block; }
+  #compare table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  #compare th, #compare td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left;
+                             vertical-align: top; }
+  #compare th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  #compare img { width: 160px; height: 110px; object-fit: cover; border-radius: 6px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+           border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="side">
+  <div id="controls">
+    <label>Tri <select id="sort"></select></label>
+    <label>Prix max <input id="maxprice" type="number" step="50" placeholder="—"></label>
+    <label>Taille <select id="size"><option value="">toutes</option></select></label>
+    <button id="cmpbtn">Comparer (0)</button>
+    <span id="count"></span>
+  </div>
+  <div id="list"></div>
+</div>
+<div id="map"></div>
+
+<div id="modal"><div id="sheet"></div></div>
+<div id="zoom"><img></div>
+<div id="compare"></div>
+
+<script>
+const DB = "/listings";
+const MODES = [["bus", "Bus"], ["velo", "Vélo"], ["auto", "Auto"]];
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null;
+const map = L.map("map").setView([46.81, -71.27], 12);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap"
+}).addTo(map);
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(path + " : " + r.status);
+  return r.json();
+}
+
+function images(l) { try { return JSON.parse(l.images || "[]"); } catch { return []; } }
+
+function timeClass(m) { return m == null ? "" : m <= 20 ? "t-good" : m <= 35 ? "t-mid" : "t-bad"; }
+function fmt(m) { return m == null ? "—" : m + "′"; }
+
+function timesHtml(l) {
+  if (!dests.length) return "";
+  let h = '<div class="times"><span></span>' + MODES.map(([, n]) => `<span class="h">${n}</span>`).join("");
+  for (const d of dests) {
+    h += `<span class="h">${esc(d.nom)}</span>`;
+    for (const [m] of MODES) {
+      const v = l[`${d.slug}_${m}`];
+      h += `<span class="${timeClass(v)}">${fmt(v)}</span>`;
+    }
+  }
+  return h + "</div>";
+}
+
+function filtered() {
+  const max = parseFloat($("#maxprice").value);
+  const size = $("#size").value;
+  const key = $("#sort").value;
+  const desc = key === "premiere_vue";
+  return listings
+    .filter((l) => !(max && l.prix && l.prix > max))
+    .filter((l) => !size || l.taille === size)
+    .sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (x == null) return 1; if (y == null) return -1;
+      return desc ? (x < y ? 1 : -1) : (x > y ? 1 : -1);
+    });
+}
+
+function render() {
+  const rows = filtered();
+  $("#count").textContent = `${rows.length} annonces`;
+  $("#list").innerHTML = rows.map((l) => {
+    const img = images(l)[0];
+    return `<div class="card ${l.id === activeId ? "active" : ""}" data-id="${esc(l.id)}">
+      ${img ? `<img loading="lazy" src="${esc(img)}">` : "<img>"}
+      <div>
+        <div class="row"><h3>${esc(l.titre)}</h3>
+          <label class="cmp"><input type="checkbox" data-pick="${esc(l.id)}" ${picked.has(l.id) ? "checked" : ""}> comparer</label></div>
+        <div class="meta"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
+          · ${esc(l.taille || "?")} · ${esc(l.adresse || "")}</div>
+        ${timesHtml(l)}
+      </div></div>`;
+  }).join("");
+
+  // Marqueurs : seulement les annonces visibles dans la liste.
+  const visible = new Set(rows.map((l) => l.id));
+  for (const [id, m] of Object.entries(markers)) {
+    if (visible.has(id)) m.addTo(map); else m.remove();
+    m.getElement()?.querySelector(".pin")?.classList.toggle("active", id === activeId);
+    m.getElement()?.querySelector(".pin")?.classList.toggle("picked", picked.has(id));
+  }
+  $("#cmpbtn").textContent = `Comparer (${picked.size})`;
+}
+
+function focus(id, pan) {
+  activeId = id;
+  const l = listings.find((x) => x.id === id);
+  if (pan && l?.latitude) map.setView([l.latitude, l.longitude], Math.max(map.getZoom(), 14));
+  render();
+  document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+function openSheet(id) {
+  const l = listings.find((x) => x.id === id);
+  $("#sheet").innerHTML = `
+    <header><h2>${esc(l.titre)}</h2><button id="close">Fermer</button></header>
+    <div class="meta"><span class="price">${l.prix ? l.prix + " $" : "?"}</span> · ${esc(l.taille || "?")}
+      · ${esc(l.adresse || "")} · dispo ${esc(l.disponible || "?")}
+      · <a href="${esc(l.url)}" target="_blank" rel="noopener">voir l'annonce</a></div>
+    <div class="meta">Meublé : ${esc(l.meuble || "?")} · Animaux : ${esc(l.animaux || "?")}
+      · Chauffage : ${esc(l.chauffage_inclus || "?")} · Hydro : ${esc(l.hydro_inclus || "?")}
+      · Stationnements : ${esc(l.stationnements || "?")} · ${esc(l.pi2 || "?")} pi²</div>
+    ${timesHtml(l)}
+    <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
+    <div id="desc">${esc(l.description || "")}</div>`;
+  $("#modal").classList.add("open");
+  $("#close").onclick = () => $("#modal").classList.remove("open");
+}
+
+function renderCompare() {
+  const rows = listings.filter((l) => picked.has(l.id));
+  if (!rows.length) { $("#compare").classList.remove("open"); return; }
+  const line = (label, f) => `<tr><th>${label}</th>${rows.map((l) => `<td>${f(l)}</td>`).join("")}</tr>`;
+  let html = `<table>
+    ${line("", (l) => `<button data-unpick="${esc(l.id)}">retirer</button>`)}
+    ${line("", (l) => images(l)[0] ? `<img src="${esc(images(l)[0])}">` : "")}
+    ${line("Annonce", (l) => `<a href="#" data-open="${esc(l.id)}">${esc(l.titre)}</a>`)}
+    ${line("Prix", (l) => l.prix ? l.prix + " $" : "?")}
+    ${line("Taille", (l) => esc(l.taille || "?"))}
+    ${line("Superficie", (l) => esc(l.pi2 || "?") + " pi²")}
+    ${line("Adresse", (l) => esc(l.adresse || ""))}
+    ${line("Dispo", (l) => esc(l.disponible || "?"))}
+    ${line("Meublé", (l) => esc(l.meuble || "?"))}
+    ${line("Animaux", (l) => esc(l.animaux || "?"))}
+    ${line("Chauffage / Hydro", (l) => esc(l.chauffage_inclus || "?") + " / " + esc(l.hydro_inclus || "?"))}
+    ${line("Stationnements", (l) => esc(l.stationnements || "?"))}`;
+  for (const d of dests) for (const [m, n] of MODES)
+    html += line(`${esc(d.nom)} · ${n}`, (l) => `<span class="${timeClass(l[`${d.slug}_${m}`])}">${fmt(l[`${d.slug}_${m}`])}</span>`);
+  $("#compare").innerHTML = html + "</table>";
+  $("#compare").classList.add("open");
+}
+
+// Événements
+$("#list").addEventListener("click", (e) => {
+  const pick = e.target.closest("[data-pick]");
+  if (pick) {
+    const id = pick.dataset.pick;
+    pick.checked ? picked.add(id) : picked.delete(id);
+    render(); if ($("#compare").classList.contains("open")) renderCompare();
+    return;
+  }
+  if (e.target.closest("label")) return;
+  const card = e.target.closest(".card");
+  if (!card) return;
+  if (card.dataset.id === activeId) openSheet(card.dataset.id); else focus(card.dataset.id, true);
+});
+$("#compare").addEventListener("click", (e) => {
+  const un = e.target.closest("[data-unpick]");
+  if (un) { picked.delete(un.dataset.unpick); render(); renderCompare(); }
+  const op = e.target.closest("[data-open]");
+  if (op) { e.preventDefault(); openSheet(op.dataset.open); }
+});
+$("#cmpbtn").onclick = () => $("#compare").classList.contains("open")
+  ? $("#compare").classList.remove("open") : renderCompare();
+$("#modal").addEventListener("click", (e) => {
+  if (e.target.id === "modal") $("#modal").classList.remove("open");
+  if (e.target.matches("#gallery img")) { $("#zoom img").src = e.target.src; $("#zoom").classList.add("open"); }
+});
+$("#zoom").onclick = () => $("#zoom").classList.remove("open");
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { $("#zoom").classList.remove("open"); $("#modal").classList.remove("open"); }
+});
+for (const id of ["#sort", "#size", "#maxprice"]) $(id).addEventListener("input", render);
+
+// Chargement
+(async () => {
+  try { dests = await get(`${DB}/destinations.json?_shape=array`); } catch { dests = []; }
+  listings = await get(`${DB}/carte.json?_shape=array&_size=max`);
+
+  const sorts = [["premiere_vue", "Plus récentes"], ["prix", "Prix"]];
+  for (const d of dests) for (const [m, n] of MODES) sorts.push([`${d.slug}_${m}`, `${d.nom} · ${n}`]);
+  $("#sort").innerHTML = sorts.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
+  const sizes = [...new Set(listings.map((l) => l.taille).filter(Boolean))].sort();
+  $("#size").innerHTML += sizes.map((s) => `<option>${esc(s)}</option>`).join("");
+
+  for (const d of dests)
+    L.marker([d.lat, d.lng], { icon: L.divIcon({ className: "", html: `<span class="dest">${esc(d.nom)}</span>` }),
+                               zIndexOffset: 1000 }).addTo(map);
+
+  for (const l of listings) {
+    if (l.latitude == null) continue;
+    const m = L.marker([l.latitude, l.longitude], {
+      icon: L.divIcon({ className: "", html: `<span class="pin">${l.prix ? l.prix + "$" : "?"}</span>` }),
+    });
+    m.on("click", () => focus(l.id, false));
+    markers[l.id] = m;
+  }
+  render();
+})().catch((e) => { $("#list").textContent = "Erreur : " + e.message; });
+</script>
+{% endraw %}
+</body>
+</html>
