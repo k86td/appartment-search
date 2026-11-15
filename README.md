@@ -14,6 +14,16 @@ nix develop          # shell avec Python, requests et datasette
 
 Depuis ailleurs : `nix run github:k86td/appartment-search -- -c /chemin/config.toml`.
 
+### OpenTripPlanner (temps de trajet, isochrones)
+
+```sh
+nix run .#otp-build   # télécharge OSM + GTFS du RTC, construit le graphe dans ./otp-data
+nix run .#otp-serve   # API sur http://localhost:8080
+```
+
+Variables : `OTP_MEM` (défaut `4G`), `OTP_DIR` (défaut `otp-data`), `OTP_PORT`, `OTP_BBOX`.
+Relancer `otp-build` quand le RTC change ses horaires (le GTFS est retéléchargé à chaque fois).
+
 ### Avec pip
 
 ```sh

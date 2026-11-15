@@ -51,16 +51,71 @@
             exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} "$@"
           '';
         };
+
+        # OTP 2.10 exige Java 25.
+        # --- OpenTripPlanner : temps de trajet (RTC, vélo, voiture) et isochrones ---
+        otpJar = pkgs.fetchurl {
+          url = "https://repo1.maven.org/maven2/org/opentripplanner/otp-shaded/2.10.0/otp-shaded-2.10.0.jar";
+          hash = "sha256-Wl0e/TCxkpVBisSa0EjF9crDQa9j3UHV4q5a2eezeIU=";
+        };
+
+        otp = pkgs.writeShellApplication {
+          name = "otp";
+          runtimeInputs = [ pkgs.jdk25_headless ];
+          text = ''
+            exec java -Xmx"''${OTP_MEM:-4G}" -jar ${otpJar} "$@"
+          '';
+        };
+
+        # Télécharge OSM + GTFS du RTC, découpe la région de Québec et construit le graphe.
+        otp-build = pkgs.writeShellApplication {
+          name = "otp-build";
+          runtimeInputs = [ otp pkgs.curl pkgs.osmium-tool pkgs.coreutils ];
+          text = ''
+            dir="''${OTP_DIR:-otp-data}"
+            # Ville de Québec + Lévis + Sainte-Foy (ouest, sud, est, nord)
+            bbox="''${OTP_BBOX:--71.55,46.70,-71.05,47.00}"
+            mkdir -p "$dir"
+            cp --no-preserve=mode ${./otp}/*.json "$dir/"
+
+            if [ ! -f "$dir/quebec-city.osm.pbf" ]; then
+              echo ">> Téléchargement OSM (province de Québec, ~1 Go)"
+              curl -fL -o "$dir/quebec-latest.osm.pbf" \
+                https://download.geofabrik.de/north-america/canada/quebec-latest.osm.pbf
+              echo ">> Découpe de la région $bbox"
+              osmium extract -b "$bbox" --overwrite \
+                -o "$dir/quebec-city.osm.pbf" "$dir/quebec-latest.osm.pbf"
+              rm "$dir/quebec-latest.osm.pbf"
+            fi
+
+            echo ">> Téléchargement GTFS du RTC"
+            curl -fL -o "$dir/rtc-gtfs.zip" \
+              https://cdn.rtcquebec.ca/Site_Internet/DonneesOuvertes/googletransit.zip
+
+            echo ">> Construction du graphe"
+            otp --build --save "$dir"
+          '';
+        };
+
+        otp-serve = pkgs.writeShellApplication {
+          name = "otp-serve";
+          runtimeInputs = [ otp ];
+          text = ''
+            exec otp --load --port "''${OTP_PORT:-8080}" "''${OTP_DIR:-otp-data}"
+          '';
+        };
       in
       {
         packages = {
           default = appartment-search;
-          inherit appartment-search ui;
+          inherit appartment-search ui otp otp-build otp-serve;
         };
 
         apps = {
           default = { type = "app"; program = "${appartment-search}/bin/appartment-search"; };
           ui = { type = "app"; program = "${ui}/bin/appartment-search-ui"; };
+          otp-build = { type = "app"; program = "${otp-build}/bin/otp-build"; };
+          otp-serve = { type = "app"; program = "${otp-serve}/bin/otp-serve"; };
         };
 
         devShells.default = pkgs.mkShell {
