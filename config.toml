@@ -19,6 +19,12 @@ urls = [
     "https://www.kijiji.ca/b-appartement-condo/ville-de-quebec/k0c37l1700124?sort=dateDesc",
 ]
 
+[scrapers.msi]
+enabled = true
+regions = ["capitale-nationale"]   # slugs du catalogue MSI
+delay = 0                          # tout vient d'un seul appel API
+max_details = 1000
+
 [trajets]
 otp_url = "http://localhost:8080/otp/gtfs/v1"
 arrivee = "08:30"        # arrivée visée le prochain mardi (autobus : tient compte des horaires)

@@ -14,6 +14,9 @@ USER_AGENT = (
 
 class Scraper(ABC):
     name: str
+    # True si scrape() renvoie TOUTES les annonces du site : celles qui n'y sont
+    # plus sont alors marquées inactives (louées ou retirées).
+    complet: bool = False
 
     def __init__(self, config: dict, known_ids: set[str]):
         self.config = config

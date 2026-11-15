@@ -24,10 +24,17 @@ def telecharger(conn: sqlite3.Connection, dossier: str, scrapers: dict,
     if not rows:
         return
     base = Path(dossier)
+    # Même photo partagée par plusieurs annonces (ex. galerie d'un immeuble MSI) : un seul téléchargement.
+    deja = dict(conn.execute("SELECT url, chemin FROM images WHERE chemin IS NOT NULL"))
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
     ok = 0
     for listing_id, idx, url in rows:
+        if url in deja:
+            conn.execute("UPDATE images SET chemin = ? WHERE listing_id = ? AND idx = ?",
+                         (deja[url], listing_id, idx))
+            conn.commit()
+            continue
         source, source_id = listing_id.split(":", 1)
         scraper = scrapers.get(source)
         dl = scraper.image_download_url(url) if scraper else url
@@ -45,6 +52,7 @@ def telecharger(conn: sqlite3.Connection, dossier: str, scrapers: dict,
         conn.execute("UPDATE images SET chemin = ? WHERE listing_id = ? AND idx = ?",
                      (rel.as_posix(), listing_id, idx))
         conn.commit()
+        deja[url] = rel.as_posix()
         ok += 1
         time.sleep(delay)
     log.info("images : %d téléchargées", ok)

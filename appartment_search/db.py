@@ -199,3 +199,12 @@ def backfill(conn: sqlite3.Connection, scrapers: dict) -> None:
             [(listing_id, i, u) for i, u in enumerate(json.loads(images or "[]"))],
         )
     conn.commit()
+
+
+def mark_missing_inactive(conn: sqlite3.Connection, source: str, seen: set[str]) -> None:
+    """Pour les sources qui renvoient tout leur catalogue : absent = retiré."""
+    actifs = {r[0] for r in conn.execute(
+        "SELECT id FROM listings WHERE source = ? AND actif = 1", (source,))}
+    for listing_id in actifs - seen:
+        conn.execute("UPDATE listings SET actif = 0 WHERE id = ?", (listing_id,))
+    conn.commit()
