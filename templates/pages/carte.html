@@ -73,9 +73,14 @@
   .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
           border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--text);
           font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-  .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
   .chip input, .chip select { border: none; outline: none; background: none; color: inherit; font: inherit; padding: 0; }
-  .chip input { width: 66px; }
+  .chip input { width: auto; min-width: 0; appearance: none; -moz-appearance: textfield;
+                box-shadow: none; border-radius: 0; }
+  .chip input:focus, .chip select:focus { outline: none; box-shadow: none; }
+  .chip:focus-within { border-color: var(--accent); }
+  .chip select { appearance: none; -moz-appearance: none; background: none; padding-right: 2px; }
+  .chip .caret { width: 12px; height: 12px; color: var(--muted); margin-left: -2px; }
   .chip input::placeholder { color: var(--muted); font-weight: 500; }
   .chip select { cursor: pointer; }
   .chip .muted { color: var(--muted); font-weight: 500; }
@@ -223,9 +228,10 @@
     <button data-v="cache">Cachées</button>
   </div>
   <div class="filters" id="filters">
-    <label class="chip" id="pricechip"><span class="muted">≤</span><input id="maxprice" type="number" step="50" placeholder="Prix max"><span class="muted">$</span></label>
+    <label class="chip" id="pricechip"><span class="muted">≤</span><input id="maxprice" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Prix max" size="7"><span class="muted">$</span></label>
     <label class="chip" id="tripchip"><select id="tripkey"><option value="">Trajet max</option></select>
-      <span class="muted">≤</span><input id="tripmax" type="number" step="5" placeholder="min" style="width:42px"></label>
+      <svg class="i caret" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+      <span class="muted">≤</span><input id="tripmax" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="min" size="3"></label>
   </div>
   <div class="sizes" id="sizes"></div>
   <div class="filters" style="padding-top:0" id="lieuchip" hidden>
@@ -646,7 +652,13 @@ $("#sizes").addEventListener("click", (e) => {
 $("#lieuclear").onclick = () => setLieu(state.lieu);
 let qTimer;
 $("#q").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 120); });
-for (const id of ["maxprice", "tripkey", "tripmax", "sort"])
+for (const id of ["maxprice", "tripmax"])
+  $("#" + id).addEventListener("input", (e) => {
+    const v = e.target.value.replace(/\D/g, "");
+    if (v !== e.target.value) e.target.value = v;
+    state[id] = v; render();
+  });
+for (const id of ["tripkey", "sort"])
   $("#" + id).addEventListener("input", (e) => { state[id] = e.target.value; render(); });
 $("#reset").onclick = () => {
   Object.assign(state, { vue: "normal", q: "", maxprice: "", sizes: [], tripkey: "", tripmax: "", lieu: "" });
