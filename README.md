@@ -39,7 +39,7 @@ datasette listings.db -m metadata.yml     # interface sur http://localhost:8001
 Tables : `listings` (résumé), `details` (page complète en cache : description, images, JSON brut),
 `attributs` (meublé, animaux, chauffage… en format long) et la vue `annonces` qui regroupe tout.
 
-La requête « carte » dans Datasette affiche une carte (via `datasette-cluster-map`).
+Page **http://localhost:8001/carte** : liste triable (prix, temps de trajet), carte, photos, fiche détaillée et comparaison côte à côte.
 
 ## Sites
 
