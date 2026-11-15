@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS images (
 );
 
 -- Tes marques depuis /carte : 'aime' ou 'cache'.
+-- Offres déjà ouvertes dans /carte : ce qui n'y est pas = « nouveau ».
+CREATE TABLE IF NOT EXISTS vues (
+    listing_id  TEXT PRIMARY KEY,
+    le          TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS marques (
     listing_id  TEXT PRIMARY KEY,
     statut      TEXT NOT NULL CHECK (statut IN ('aime', 'cache')),

@@ -324,7 +324,7 @@
     <input id="q" type="search" placeholder="Rechercher un titre, une rue, un quartier…" autocomplete="off"></label>
   <div class="seg" id="vue"><span class="seg-ind"></span>
     <button data-v="normal" class="on">Toutes <i></i></button>
-    <button data-v="new" title="Vues pour la première fois dans les dernières 48 h">Nouvelles <i></i></button>
+    <button data-v="new" title="Pas encore ouvertes, ni aimées ou cachées">Nouvelles <i></i></button>
     <button data-v="aime">♥ Aimées <i></i></button>
     <button data-v="cache">Cachées <i></i></button>
   </div>
@@ -345,6 +345,8 @@
     <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
     <select id="sort"></select>
     <span class="grow"></span>
+    <button class="icon-btn" id="allseen" hidden title="Ne plus afficher ces annonces comme nouvelles"
+      style="width:auto;padding:0 8px;font-size:12px">Tout marquer vu</button>
     <button class="icon-btn" id="reset" title="Réinitialiser les filtres" style="width:auto;padding:0 8px;font-size:12px">Réinitialiser</button>
   </div>
   <div id="list"></div>
@@ -527,6 +529,7 @@ async function setMarque(id, statut) {
   const body = await r.json().catch(() => ({}));
   if (!r.ok || body.ok === false) { alert("Impossible d'enregistrer : " + (body.message || r.status)); return; }
   l.marque = nouveau;
+  if (nouveau) markSeen(id);
   // Encore visible avec les filtres actuels ? On met à jour la carte seule, sinon on re-filtre.
   if (matches(l)) { patchCard(id); refreshMarker(id); } else render({ keep: true });
   if (nouveau === "aime") requestAnimationFrame(() =>
@@ -576,7 +579,6 @@ function matches(l) {
   return filtresOk(l);
 }
 
-const NOUVELLE_MS = 48 * 3600 * 1000;
 function vueOk(l, vue) {
   return { normal: l.marque !== "cache", new: l._new && l.marque !== "cache",
            aime: l.marque === "aime", cache: l.marque === "cache" }[vue];
@@ -651,8 +653,7 @@ function render({ keep = false } = {}) {
 
   $("#count").textContent = rows.length;
   // Nombre d'annonces dans chaque vue, avec les autres filtres appliqués.
-  const base = listings.filter(filtresOk);
-  for (const b of $$("#vue button")) b.querySelector("i").textContent = base.filter((l) => vueOk(l, b.dataset.v)).length;
+  updateCounts();
   $("#opencount").textContent = `${rows.length} annonces`;
   // Les marqueurs suivent les filtres, mais pas le filtre « immeuble » (on garde le contexte autour).
   const key = all.map((l) => l.id).join(",");
@@ -661,6 +662,34 @@ function render({ keep = false } = {}) {
   updateCmpBar();
   syncControls();
   save();
+}
+
+// Nombre d'annonces dans chaque vue, avec les autres filtres appliqués.
+function updateCounts() {
+  const base = listings.filter(filtresOk);
+  for (const b of $$("#vue button")) b.querySelector("i").textContent = base.filter((l) => vueOk(l, b.dataset.v)).length;
+  $("#allseen").hidden = !(state.vue === "new" && rows.some((l) => l._new));
+}
+
+// Ouvrir (fiche ou sélection) une offre la marque « vue » : elle n'est plus nouvelle.
+// La carte reste dans la liste jusqu'au prochain filtrage, pour ne pas sauter sous le doigt.
+async function markSeen(id) {
+  const l = byId[id];
+  if (!l || !l._new) return;
+  l._new = false; l.vue_le = new Date().toISOString();
+  patchCard(id); updateCounts();
+  try {
+    await fetch(`${DB}/voir`, { method: "POST", credentials: "same-origin", headers: { Accept: "application/json" },
+                                body: new URLSearchParams({ csrftoken: CSRF, listing_id: id }) });
+  } catch { /* hors ligne : redeviendra nouvelle au prochain chargement */ }
+}
+
+async function markAllSeen() {
+  const r = await fetch(`${DB}/tout_voir`, { method: "POST", credentials: "same-origin",
+    headers: { Accept: "application/json" }, body: new URLSearchParams({ csrftoken: CSRF, confirmer: "oui" }) });
+  if (!r.ok) { alert("Impossible d'enregistrer : " + r.status); return; }
+  for (const l of listings) if (l._new) { l._new = false; l.vue_le = new Date().toISOString(); }
+  render();
 }
 
 function updateCmpBar() {
@@ -703,6 +732,7 @@ function focus(id, pan) {
   }
   el?.classList.add("active");
   refreshMarker(id);
+  markSeen(id);
   if (state.collapsed && !pan) toggleSide(false);
   if (!pan && isMobile() && $("#side").classList.contains("expanded")) setExpanded(false);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -803,6 +833,7 @@ function _closeSheet() {
 
 function openSheet(id) {
   const l = byId[id];
+  markSeen(id);
   $("#sheet").innerHTML = `
     <header><h2>${esc(l.titre)}</h2><span class="grow-m"></span>${markButtons(l)}
       <button class="icon-btn" id="onmap" title="Voir sur la carte">${ICONS.pin}</button>
@@ -983,6 +1014,7 @@ $("#sizes").addEventListener("click", (e) => {
   render();
 });
 $("#lieuclear").onclick = () => setLieu(state.lieu);
+$("#allseen").onclick = () => { if (confirm("Marquer toutes les annonces comme vues ?")) markAllSeen(); };
 let qTimer;
 $("#q").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 120); });
 for (const id of ["maxprice", "tripmax"])
@@ -1048,7 +1080,7 @@ async function showIso(value) {
   const now = Date.now();
   for (const l of listings) {
     l._txt = `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase();
-    l._new = now - Date.parse(l.premiere_vue) < NOUVELLE_MS;
+    l._new = !l.vue_le && !l.marque;      // nouvelle = jamais ouverte ni marquée
     try { l._sources = JSON.parse(l.sources || "[]"); } catch { l._sources = []; }
     if (!l._sources.length) l._sources = [{ id: l.id, source: l.source, url: l.url, prix: l.prix }];
     l._sources.sort((a, b) => (a.id === l.id ? -1 : b.id === l.id ? 1 : 0));

@@ -46,6 +46,10 @@ databases:
                FROM marques m
                WHERE m.listing_id = t.id
                   OR m.listing_id IN (SELECT listing_id FROM offres WHERE offre_id = t.id)) AS marque,
+            -- Déjà ouverte ? (n'importe laquelle des annonces de l'offre)
+            (SELECT max(v.le) FROM vues v
+               WHERE v.listing_id = t.id
+                  OR v.listing_id IN (SELECT listing_id FROM offres WHERE offre_id = t.id)) AS vue_le,
             (SELECT json_group_array(json_object('id', l2.id, 'source', l2.source, 'url', l2.url, 'prix', l2.prix))
                FROM offres o2 JOIN listings l2 ON l2.id = o2.listing_id
                WHERE o2.offre_id = t.id) AS sources
@@ -79,3 +83,17 @@ databases:
           DELETE FROM marques WHERE listing_id = :listing_id
              OR listing_id IN (SELECT listing_id FROM offres
                                WHERE offre_id = (SELECT offre_id FROM offres WHERE listing_id = :listing_id))
+      voir:
+        title: Marquer une offre comme vue (toutes ses annonces)
+        write: true
+        sql: |-
+          INSERT OR IGNORE INTO vues (listing_id, le)
+          SELECT listing_id, datetime('now') FROM offres
+          WHERE offre_id = (SELECT offre_id FROM offres WHERE listing_id = :listing_id)
+          UNION SELECT :listing_id, datetime('now')
+      tout_voir:
+        title: Marquer toutes les annonces actives comme vues
+        write: true
+        sql: |-
+          INSERT OR IGNORE INTO vues (listing_id, le)
+          SELECT id, datetime('now') FROM listings WHERE actif = 1 AND :confirmer = 'oui'
