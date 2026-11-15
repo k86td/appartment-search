@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import logging
 import time
 import tomllib
@@ -11,7 +12,9 @@ from .scrapers import SCRAPERS
 log = logging.getLogger("appartment_search")
 
 
-def run(config: dict) -> None:
+def run(config: dict, sources: set[str] | None = None) -> None:
+    """Un passage complet. `sources` : ne scraper que ces sites (les étapes communes
+    — dédup, photos, trajets — s'exécutent quand même)."""
     conn = db.connect(config.get("database", "listings.db"))
     notifiers: list[Notifier] = []
     criteria = config.get("filtres", {})
@@ -22,7 +25,7 @@ def run(config: dict) -> None:
     db.backfill(conn, scrapers)
 
     for name, scraper_cfg in config.get("scrapers", {}).items():
-        if not scraper_cfg.get("enabled", True):
+        if not scraper_cfg.get("enabled", True) or (sources and name not in sources):
             continue
         scraper = scrapers[name]
         try:
@@ -83,6 +86,7 @@ def main() -> None:
     parser.add_argument("-c", "--config", default="config.toml")
     parser.add_argument("--trajets-seulement", action="store_true",
                         help="ne scrape pas, calcule seulement les temps de trajet manquants")
+    parser.add_argument("--sources", help="ne scraper que ces sites, séparés par des virgules (ex. kijiji,msi)")
     parser.add_argument("--db", help="chemin de la base (remplace `database` de la config)")
     parser.add_argument("--init", action="store_true",
                         help="crée/met à jour les tables et vues sans rien scraper (lancé par l'UI)")
@@ -100,6 +104,15 @@ def main() -> None:
         config = {}
     if args.db:
         config["database"] = args.db
+    sources = {x.strip() for x in args.sources.split(",") if x.strip()} if args.sources else None
+    if sources and (inconnus := sources - set(SCRAPERS)):
+        parser.error(f"sites inconnus : {', '.join(sorted(inconnus))}")
+
+    # Un seul scraping à la fois sur une même base (plusieurs timers peuvent tomber en même
+    # temps) : le second attend la fin du premier. --init et --isochrones ne prennent pas le verrou.
+    if not (args.init or args.isochrones):
+        verrou = open(config.get("database", "listings.db") + ".lock", "w")
+        fcntl.flock(verrou, fcntl.LOCK_EX)
     if args.init:
         conn = db.connect(config.get("database", "listings.db"))
         trajets.create_tables(conn, config.get("trajets", {}).get("destinations", []))
@@ -116,7 +129,7 @@ def main() -> None:
     elif args.trajets_seulement:
         trajets.calculer(db.connect(config.get("database", "listings.db")), config.get("trajets", {}))
     else:
-        run(config)
+        run(config, sources)
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ LEFT JOIN geo g ON g.adresse = l.adresse;
 
 
 def connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=120)   # attend si un autre processus écrit
     conn.executescript(SCHEMA)
     return conn
 

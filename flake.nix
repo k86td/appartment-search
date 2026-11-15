@@ -76,7 +76,7 @@
         # Télécharge OSM + GTFS du RTC, découpe la région de Québec et construit le graphe.
         otp-build = pkgs.writeShellApplication {
           name = "otp-build";
-          runtimeInputs = [ otp pkgs.curl pkgs.osmium-tool pkgs.coreutils ];
+          runtimeInputs = [ otp pkgs.curl pkgs.osmium-tool pkgs.coreutils pkgs.findutils ];
           text = ''
             dir="''${OTP_DIR:-otp-data}"
             # Ville de Québec + Lévis + Sainte-Foy (ouest, sud, est, nord)
@@ -84,7 +84,9 @@
             mkdir -p "$dir"
             cp --no-preserve=mode ${./otp}/*.json "$dir/"
 
-            if [ ! -f "$dir/quebec-city.osm.pbf" ]; then
+            # Carte OSM : retéléchargée si absente ou plus vieille que OTP_OSM_MAX_AGE_DAYS (défaut 90).
+            age="''${OTP_OSM_MAX_AGE_DAYS:-90}"
+            if [ ! -f "$dir/quebec-city.osm.pbf" ] || [ -n "$(find "$dir/quebec-city.osm.pbf" -mtime +"$age")" ]; then
               echo ">> Téléchargement OSM (province de Québec, ~1 Go)"
               curl -fL -o "$dir/quebec-latest.osm.pbf" \
                 https://download.geofabrik.de/north-america/canada/quebec-latest.osm.pbf

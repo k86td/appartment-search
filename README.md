@@ -60,12 +60,17 @@ Services créés :
 
 | Unité | Rôle |
 |---|---|
-| `appartment-search-scrape.timer` | scraping aux 6 h (`schedule`), + détails, photos, trajets, dédup |
+| `appartment-search-scrape.timer` | scraping aux 6 h (`schedule`) des sites sans horaire propre, + détails, photos, trajets, dédup |
+| `appartment-search-scrape-<site>.timer` | un par site configuré dans `scrapers.<site>.schedule` |
 | `appartment-search-ui` | interface sur `127.0.0.1:8001` (`ui.port`) |
 | `appartment-search-otp` | OpenTripPlanner ; construit le graphe au 1er démarrage |
-| `appartment-search-otp-build.timer` | reconstruit le graphe chaque mois (horaires RTC) |
+| `appartment-search-otp-build.timer` | reconstruit le graphe chaque mois (horaires RTC) ; carte OSM retéléchargée après `otp.osmMaxAgeDays` (90 j) |
 | `appartment-search-isochrones` | à lancer à la main : `systemctl start appartment-search-isochrones` |
 | `appartment-search-tailscale` | `tailscale serve` vers l'interface (si `tailscale.enable`) |
+
+Horaires au format `OnCalendar` de systemd (`hourly`, `daily`, `weekly`, `monthly`,
+`*-*-* 00/6:00:00`…) ; vérifier avec `systemd-analyze calendar "…"`. Exemple :
+`scrapers.kijiji.schedule = "hourly";`. Deux passages simultanés s'attendent (verrou).
 
 Données dans `/var/lib/appartment-search` (`dataDir`). Lancer un passage tout de suite :
 `systemctl start appartment-search-scrape` ; suivre : `journalctl -fu appartment-search-scrape`.

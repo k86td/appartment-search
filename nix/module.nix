@@ -26,6 +26,26 @@ let
     };
   configFile = toml.generate "appartment-search.toml" settings;
 
+  # Sites actifs, et répartition entre horaire propre et horaire global.
+  actifs = lib.attrNames (lib.filterAttrs (_: c: c.enabled or true) (settings.scrapers or { }));
+  propres = lib.filterAttrs (n: c: c.schedule != null && lib.elem n actifs) cfg.scrapers;
+  globaux = lib.filter (n: !(propres ? ${n})) actifs;
+
+  serviceScrape = description: sources: {
+    inherit description;
+    after = [ "network-online.target" ] ++ lib.optional cfg.otp.enable "appartment-search-otp.service";
+    wants = [ "network-online.target" ];
+    serviceConfig = commun // {
+      Type = "oneshot";
+      ExecStart = "${pkgsFlake.appartment-search}/bin/appartment-search -c ${configFile} --sources ${lib.concatStringsSep "," sources}";
+      TimeoutStartSec = "2h";
+    };
+  };
+  timer = schedule: {
+    wantedBy = [ "timers.target" ];
+    timerConfig = { OnCalendar = schedule; Persistent = true; RandomizedDelaySec = "10m"; };
+  };
+
   commun = {
     User = "appartment-search";
     Group = "appartment-search";
@@ -41,6 +61,7 @@ let
     OTP_DIR = "${cfg.dataDir}/otp-data";
     OTP_MEM = cfg.otp.memory;
     OTP_PORT = toString cfg.otp.port;
+    OTP_OSM_MAX_AGE_DAYS = toString cfg.otp.osmMaxAgeDays;
   } // lib.optionalAttrs (cfg.otp.bbox != null) { OTP_BBOX = cfg.otp.bbox; };
 in
 {
@@ -72,7 +93,34 @@ in
     schedule = lib.mkOption {
       type = lib.types.str;
       default = "*-*-* 00/6:00:00";
-      description = "Fréquence du scraping (format OnCalendar de systemd). Défaut : aux 6 heures.";
+      example = "hourly";
+      description = ''
+        Fréquence du scraping des sites sans horaire propre, au format OnCalendar de systemd
+        (`hourly`, `daily`, `weekly`, `monthly`, `*-*-* 00/6:00:00`…, voir systemd.time(7)).
+        Vérifier une expression : `systemd-analyze calendar "…"`.
+      '';
+    };
+
+    scrapers = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options.schedule = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Horaire propre à ce site (format OnCalendar). null = horaire global.";
+        };
+      });
+      default = { };
+      example = lib.literalExpression ''
+        {
+          kijiji.schedule = "hourly";
+          msi.schedule = "daily";
+        }
+      '';
+      description = ''
+        Horaire par site. Chaque site configuré a son propre timer
+        (appartment-search-scrape-<site>) ; les étapes communes (dédup, photos, trajets)
+        s'exécutent à chaque passage. Deux passages simultanés s'attendent (verrou).
+      '';
     };
 
     ui = {
@@ -98,7 +146,12 @@ in
       rebuildSchedule = lib.mkOption {
         type = lib.types.str;
         default = "monthly";
-        description = "Reconstruction du graphe (nouveaux horaires du RTC).";
+        description = "Reconstruction du graphe avec les derniers horaires du RTC (format OnCalendar).";
+      };
+      osmMaxAgeDays = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 90;
+        description = "À la reconstruction, la carte OpenStreetMap est retéléchargée si elle a plus de N jours.";
       };
     };
 
@@ -109,26 +162,10 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf cfg.enable (lib.mkMerge [ {
     users.users.appartment-search = { isSystemUser = true; group = "appartment-search"; home = cfg.dataDir; };
     users.groups.appartment-search = { };
     systemd.tmpfiles.rules = [ "d ${cfg.dataDir} 0750 appartment-search appartment-search -" ];
-
-    # ---------- Scraping périodique ----------
-    systemd.services.appartment-search-scrape = {
-      description = "Recherche d'appartements : scraping, détails, photos, trajets";
-      after = [ "network-online.target" ] ++ lib.optional cfg.otp.enable "appartment-search-otp.service";
-      wants = [ "network-online.target" ];
-      serviceConfig = commun // {
-        Type = "oneshot";
-        ExecStart = "${pkgsFlake.appartment-search}/bin/appartment-search -c ${configFile}";
-        TimeoutStartSec = "2h";
-      };
-    };
-    systemd.timers.appartment-search-scrape = {
-      wantedBy = [ "timers.target" ];
-      timerConfig = { OnCalendar = cfg.schedule; Persistent = true; RandomizedDelaySec = "10m"; };
-    };
 
     # Isochrones : longues, à lancer à la main (systemctl start appartment-search-isochrones).
     systemd.services.appartment-search-isochrones = lib.mkIf cfg.otp.enable {
@@ -203,5 +240,24 @@ in
         ExecStop = "${config.services.tailscale.package}/bin/tailscale serve --https=443 off";
       };
     };
-  };
+  }
+
+  {
+    # ---------- Scraping périodique ----------
+    # Un service + timer global pour les sites sans horaire propre…
+    systemd.services = lib.mkMerge [
+      (lib.mkIf (globaux != [ ]) {
+        appartment-search-scrape = serviceScrape
+          "Recherche d'appartements : scraping (${lib.concatStringsSep ", " globaux})" globaux;
+      })
+      # … et un par site qui a son propre horaire.
+      (lib.mapAttrs' (n: _: lib.nameValuePair "appartment-search-scrape-${n}"
+        (serviceScrape "Recherche d'appartements : scraping ${n}" [ n ])) propres)
+    ];
+    systemd.timers = lib.mkMerge [
+      (lib.mkIf (globaux != [ ]) { appartment-search-scrape = timer cfg.schedule; })
+      (lib.mapAttrs' (n: c: lib.nameValuePair "appartment-search-scrape-${n}" (timer c.schedule)) propres)
+    ];
+
+  } ]);
 }
