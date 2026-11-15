@@ -26,6 +26,7 @@
             --bad: #ef6b5e; --shadow: 0 8px 30px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4); }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg);
          color: var(--text); height: 100vh; overflow: hidden; }
   #map { position: fixed; inset: 0; }
@@ -147,6 +148,12 @@
   .cluster b { background: var(--accent); color: #fff; border-radius: 999px; min-width: 20px; height: 20px;
                display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; font-size: 11px; }
   .cluster span { color: var(--muted); font-weight: 600; }
+  .cluster.bldg { cursor: pointer; }
+  .cluster.active { background: var(--accent); border-color: var(--accent); }
+  .cluster.active span { color: #fff; }
+  .cluster.active b { background: #fff; color: var(--accent); }
+  .cluster.liked::after { content: "♥"; color: var(--like); margin-left: 2px; }
+  .cluster.picked, .pin.picked { outline: 2px solid var(--mid); }
   .marker-cluster, .marker-cluster div { background: none !important; }
   .dest { background: var(--text); color: var(--bg); border-radius: 999px; padding: 2px 8px; font-size: 11px;
           font-weight: 700; display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; }
@@ -221,6 +228,10 @@
       <span class="muted">≤</span><input id="tripmax" type="number" step="5" placeholder="min" style="width:42px"></label>
   </div>
   <div class="sizes" id="sizes"></div>
+  <div class="filters" style="padding-top:0" id="lieuchip" hidden>
+    <span class="chip on"><svg class="i" style="width:14px;height:14px"><use href="#ic-pin"/></svg><span id="lieutxt"></span>
+      <button class="icon-btn" id="lieuclear" style="width:20px;height:20px;color:inherit" title="Retirer"><svg class="i" style="width:12px;height:12px"><use href="#ic-close"/></svg></button></span>
+  </div>
   <div class="listhead">
     <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
     <select id="sort"></select>
@@ -247,26 +258,29 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-// Icônes Lucide (licence ISC).
-const svg = (inner, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24">${inner}</svg>`;
-const ICONS = {
-  heart: svg('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),
-  eyeOff: svg('<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>'),
-  eye: svg('<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>'),
-  cols: svg('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>'),
-  close: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
-  ext: svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
-  bus: svg('<path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/>'),
-  velo: svg('<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>'),
-  auto: svg('<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>'),
+// Icônes Lucide (licence ISC), déclarées une fois dans un sprite et référencées par <use>.
+const PATHS = {
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  cols: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/>',
+  close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  ext: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  pin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  bus: '<path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/>',
+  velo: '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+  auto: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
 };
+document.body.insertAdjacentHTML("afterbegin", `<svg width="0" height="0" style="position:absolute">${
+  Object.entries(PATHS).map(([k, v]) => `<symbol id="ic-${k}" viewBox="0 0 24 24">${v}</symbol>`).join("")}</svg>`);
+const ICONS = Object.fromEntries(Object.keys(PATHS).map((k) => [k, `<svg class="i"><use href="#ic-${k}"/></svg>`]));
 
 let byId = {};
-let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null, clusterKey = null;
+let listings = [], dests = [], picked = new Set(), activeId = null;
 
 // État de l'interface, gardé dans le navigateur (préférence légère, pas critique).
 const state = Object.assign({ vue: "normal", q: "", maxprice: "", sizes: [], tripkey: "", tripmax: "",
-                              sort: "premiere_vue", collapsed: false, iso: "" },
+                              sort: "premiere_vue", collapsed: false, iso: "", lieu: "" },
                             (() => { try { return JSON.parse(localStorage.getItem("carte") || "{}"); } catch { return {}; } })());
 function save() { try { localStorage.setItem("carte", JSON.stringify(state)); } catch {} }
 
@@ -274,31 +288,78 @@ const map = L.map("map", { maxZoom: 19, zoomControl: false }).setView([46.81, -7
 L.control.zoom({ position: "bottomright" }).addTo(map);
 // Fond vectoriel OpenFreeMap (gratuit, sans clé) : épuré de loin, détaillé en zoomant.
 const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-L.maplibreGL({
+const gl = L.maplibreGL({
   style: `https://tiles.openfreemap.org/styles/${dark ? "dark" : "positron"}`,
   attribution: '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
 }).addTo(map);
+map.on("moveend zoomend", () => requestAnimationFrame(() => { gl._update(); gl.getMaplibreMap().triggerRepaint(); }));
 
 // Regroupement : le badge donne le nombre d'annonces et le prix le plus bas.
 const cluster = L.markerClusterGroup({
   maxClusterRadius: 60,
   showCoverageOnHover: false,
-  spiderfyOnMaxZoom: true,        // même adresse : les annonces s'écartent au clic
+  spiderfyOnMaxZoom: false,       // une adresse = un marqueur, rien à écarter
+  chunkedLoading: true,
   iconCreateFunction(c) {
     const kids = c.getAllChildMarkers();
-    const prices = kids.map((m) => m.options.prix).filter(Boolean);
+    const n = kids.reduce((s, m) => s + m.options.n, 0);
+    const prices = kids.map((m) => m.options.prix).filter(Number.isFinite);
     const min = prices.length ? `dès ${Math.min(...prices)}$` : "";
     return L.divIcon({ className: "", iconSize: null,
-      html: `<span class="cluster"><b>${kids.length}</b>${min ? `<span>${min}</span>` : ""}</span>` });
+      html: `<span class="cluster"><b>${n}</b>${min ? `<span>${min}</span>` : ""}</span>` });
   },
 }).addTo(map);
 
-function pinClass(id) {
-  const l = byId[id];
-  return [id === activeId && "active", picked.has(id) && "picked", l?.marque === "aime" && "liked"].filter(Boolean).join(" ");
+// ---------- Marqueurs : un par immeuble (adresse / coordonnées) ----------
+// Un immeuble LOGISCO ou MSI peut avoir 100 unités : un seul marqueur « N · dès X$ »,
+// qui filtre la liste à cet immeuble au clic (au lieu d'une « araignée » illisible).
+let groups = new Map();     // clé -> { key, lat, lng, ids: [] }
+const geoKey = (l) => l.latitude == null ? null : `${(+l.latitude).toFixed(5)},${(+l.longitude).toFixed(5)}`;
+
+function groupIcon(g) {
+  const ls = g.ids.map((id) => byId[id]);
+  const active = g.ids.includes(activeId) || state.lieu === g.key;
+  const liked = ls.some((l) => l.marque === "aime");
+  const pickd = g.ids.some((id) => picked.has(id));
+  if (ls.length === 1) {
+    const l = ls[0];
+    return L.divIcon({ className: "", iconSize: null,
+      html: `<span class="pin ${active ? "active" : ""} ${liked ? "liked" : ""} ${pickd ? "picked" : ""}">${l.prix ? l.prix + "$" : "?"}</span>` });
+  }
+  const prices = ls.map((l) => l.prix).filter(Boolean);
+  return L.divIcon({ className: "", iconSize: null,
+    html: `<span class="cluster bldg ${active ? "active" : ""} ${liked ? "liked" : ""} ${pickd ? "picked" : ""}"><b>${ls.length}</b>${
+      prices.length ? `<span>dès ${Math.min(...prices)}$</span>` : ""}</span>` });
 }
-function pinIcon(l, cls) {
-  return L.divIcon({ className: "", html: `<span class="pin ${cls}">${l.prix ? l.prix + "$" : "?"}</span>` });
+
+function rebuildMarkers(rows) {
+  groups = new Map();
+  for (const l of rows) {
+    const k = geoKey(l); if (!k) continue;
+    if (!groups.has(k)) groups.set(k, { key: k, lat: +l.latitude, lng: +l.longitude, ids: [] });
+    groups.get(k).ids.push(l.id);
+  }
+  cluster.clearLayers();
+  const ms = [];
+  for (const g of groups.values()) {
+    g.marker = L.marker([g.lat, g.lng], { icon: groupIcon(g), n: g.ids.length,
+      prix: Math.min(...g.ids.map((id) => byId[id].prix || Infinity)) });
+    g.marker.on("click", () => g.ids.length === 1 ? focus(g.ids[0], false) : setLieu(g.key));
+    ms.push(g.marker);
+  }
+  cluster.addLayers(ms);
+}
+
+function refreshMarker(id) {
+  const g = groups.get(geoKey(byId[id]));
+  if (g) g.marker.setIcon(groupIcon(g));
+}
+
+function setLieu(key) {
+  state.lieu = state.lieu === key ? "" : key;
+  activeId = null;
+  render();
+  $("#list").scrollTop = 0;
 }
 
 // Marques (aime / cache), enregistrées dans la base via les requêtes « marquer » / « demarquer ».
@@ -314,7 +375,8 @@ async function setMarque(id, statut) {
   const body = await r.json().catch(() => ({}));
   if (!r.ok || body.ok === false) { alert("Impossible d'enregistrer : " + (body.message || r.status)); return; }
   l.marque = nouveau;
-  render();
+  // Encore visible avec les filtres actuels ? On met à jour la carte seule, sinon on re-filtre.
+  if (matches(l)) { patchCard(id); refreshMarker(id); } else render({ keep: true });
   if ($("#modal").classList.contains("open")) openSheet(id);
 }
 
@@ -355,28 +417,31 @@ function timesHtml(l) {
   </div>`).join("")}</div>`;
 }
 
-function filtered() {
+function matches(l) {
   const max = parseFloat(state.maxprice), tmax = parseFloat(state.tripmax);
   const q = state.q.trim().toLowerCase();
+  if (!({ normal: l.marque !== "cache", aime: l.marque === "aime", cache: l.marque === "cache" })[state.vue]) return false;
+  if (max && l.prix && l.prix > max) return false;
+  if (state.sizes.length && !state.sizes.includes(l.taille)) return false;
+  if (state.tripkey && tmax && !(l[state.tripkey] != null && l[state.tripkey] <= tmax)) return false;
+  if (q && !l._txt.includes(q)) return false;
+  return true;
+}
+
+function filtered() {
   const key = state.sort, desc = key === "premiere_vue";
-  return listings
-    .filter((l) => ({ normal: l.marque !== "cache", aime: l.marque === "aime", cache: l.marque === "cache" })[state.vue])
-    .filter((l) => !(max && l.prix && l.prix > max))
-    .filter((l) => !state.sizes.length || state.sizes.includes(l.taille))
-    .filter((l) => !(state.tripkey && tmax) || (l[state.tripkey] != null && l[state.tripkey] <= tmax))
-    .filter((l) => !q || `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase().includes(q))
-    .sort((a, b) => {
-      const x = a[key], y = b[key];
-      if (x == null) return 1; if (y == null) return -1;
-      return desc ? (x < y ? 1 : -1) : (x > y ? 1 : -1);
-    });
+  return listings.filter(matches).sort((a, b) => {
+    const x = a[key], y = b[key];
+    if (x == null) return 1; if (y == null) return -1;
+    return desc ? (x < y ? 1 : -1) : (x > y ? 1 : -1);
+  });
 }
 
 function cardHtml(l) {
   const img = images(l)[0];
   const d = dispo(l);
   return `<div class="card ${l.id === activeId ? "active" : ""} ${l.marque || ""}" data-id="${esc(l.id)}">
-    ${img ? `<img class="thumb" loading="lazy" src="${esc(img)}" alt="">` : '<div class="thumb"></div>'}
+    ${img ? `<img class="thumb" loading="lazy" decoding="async" src="${esc(img)}" alt="">` : '<div class="thumb"></div>'}
     <div class="body">
       <div class="line1"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
         ${l.taille ? `<span class="tag">${esc(l.taille)}</span>` : ""}
@@ -390,32 +455,47 @@ function cardHtml(l) {
   </div>`;
 }
 
-function render() {
-  const rows = filtered();
+const cardEl = (id) => document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+function patchCard(id) { const el = cardEl(id); if (el) el.outerHTML = cardHtml(byId[id]); }
+
+// ---------- Liste : rendu par tranches (les cartes suivantes s'ajoutent au défilement) ----------
+const PAGE = 40;
+let rows = [], shown = 0, markerKey = null;
+const sentinel = document.createElement("div");
+const more = new IntersectionObserver((e) => { if (e[0].isIntersecting) appendCards(); }, { root: $("#list"), rootMargin: "400px" });
+
+function appendCards(n = PAGE) {
+  if (shown >= rows.length) return;
+  const next = rows.slice(shown, shown + n);
+  shown += next.length;
+  sentinel.insertAdjacentHTML("beforebegin", next.map(cardHtml).join(""));
+}
+
+function render({ keep = false } = {}) {
+  const all = filtered();
+  // Filtre « immeuble » (clic sur un marqueur groupé) appliqué après les autres.
+  rows = state.lieu ? all.filter((l) => geoKey(l) === state.lieu) : all;
+  const n = keep ? Math.max(shown, PAGE) : PAGE;
+  shown = 0;
+  $("#list").innerHTML = rows.length ? "" : '<div class="empty">Aucune annonce avec ces filtres.</div>';
+  $("#list").append(sentinel);
+  appendCards(n);
+  more.observe(sentinel);
+
   $("#count").textContent = rows.length;
   $("#opencount").textContent = `${rows.length} annonces`;
-  $("#list").innerHTML = rows.length ? rows.map(cardHtml).join("")
-    : '<div class="empty">Aucune annonce avec ces filtres.</div>';
-
-  // Marqueurs : seulement les annonces visibles dans la liste, regroupées quand elles sont proches.
-  const visibleIds = rows.map((l) => l.id).filter((id) => markers[id]);
-  const key = visibleIds.slice().sort().join(",");
-  if (key !== clusterKey) {
-    clusterKey = key;
-    cluster.clearLayers();
-    cluster.addLayers(visibleIds.map((id) => markers[id]));
-  }
-  for (const id of visibleIds) {
-    const want = pinClass(id);
-    if (markers[id].options.pinClass !== want) {
-      markers[id].options.pinClass = want;
-      markers[id].setIcon(pinIcon(byId[id], want));
-    }
-  }
-  $("#cmpbar").classList.toggle("show", picked.size > 0);
-  $("#cmpcount").textContent = `${picked.size} sélectionnée${picked.size > 1 ? "s" : ""}`;
+  // Les marqueurs suivent les filtres, mais pas le filtre « immeuble » (on garde le contexte autour).
+  const key = all.map((l) => l.id).join(",");
+  if (key !== markerKey) { markerKey = key; rebuildMarkers(all); }
+  else for (const g of groups.values()) g.marker.setIcon(groupIcon(g));
+  updateCmpBar();
   syncControls();
   save();
+}
+
+function updateCmpBar() {
+  $("#cmpbar").classList.toggle("show", picked.size > 0);
+  $("#cmpcount").textContent = `${picked.size} sélectionnée${picked.size > 1 ? "s" : ""}`;
 }
 
 function syncControls() {
@@ -423,15 +503,33 @@ function syncControls() {
   $$("#sizes .chip").forEach((c) => c.classList.toggle("on", state.sizes.includes(c.dataset.size)));
   $("#pricechip").classList.toggle("on", !!state.maxprice);
   $("#tripchip").classList.toggle("on", !!(state.tripkey && state.tripmax));
+  const g = state.lieu && groups.get(state.lieu);
+  $("#lieuchip").hidden = !state.lieu;
+  if (state.lieu) $("#lieutxt").textContent = g ? `${byId[g.ids[0]].adresse || "Immeuble"} · ${rows.length}` : "Immeuble";
   document.body.classList.toggle("collapsed", state.collapsed);
 }
 
+// Sélection : seules les deux cartes et les deux marqueurs concernés changent (pas de re-rendu complet).
 function focus(id, pan) {
+  const prev = activeId;
   activeId = id;
-  if (pan && markers[id]) cluster.zoomToShowLayer(markers[id]);
-  if (state.collapsed && !pan) { state.collapsed = false; }
-  render();
-  document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (prev && prev !== id) { cardEl(prev)?.classList.remove("active"); if (byId[prev]) refreshMarker(prev); }
+  let el = cardEl(id);
+  if (!el) {                               // pas encore affichée : on charge les tranches jusqu'à elle
+    const i = rows.findIndex((l) => l.id === id);
+    if (i >= 0) { appendCards(i - shown + PAGE); el = cardEl(id); }
+  }
+  el?.classList.add("active");
+  refreshMarker(id);
+  if (state.collapsed && !pan) toggleSide(false);
+  el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const l = byId[id];
+  if (pan && l.latitude != null) {
+    // Centre dans la partie visible de la carte (à droite du panneau).
+    const z = Math.max(map.getZoom(), 15);
+    const off = state.collapsed || innerWidth <= 720 ? 0 : 222;
+    map.setView(map.unproject(map.project([l.latitude, l.longitude], z).subtract([off, 0]), z), z, { animate: true });
+  }
 }
 
 function contactHtml(l) {
@@ -503,7 +601,7 @@ document.addEventListener("click", (e) => {
     e.stopPropagation();
     const id = p.dataset.pick;
     picked.has(id) ? picked.delete(id) : picked.add(id);
-    render();
+    patchCard(id); refreshMarker(id); updateCmpBar();
     if ($("#compare").classList.contains("open")) renderCompare();
     if ($("#modal").classList.contains("open")) openSheet(id);
   }
@@ -516,13 +614,13 @@ $("#list").addEventListener("click", (e) => {
 $("#list").addEventListener("dblclick", (e) => { const c = e.target.closest(".card"); if (c) openSheet(c.dataset.id); });
 $("#compare").addEventListener("click", (e) => {
   const un = e.target.closest("[data-unpick]");
-  if (un) { picked.delete(un.dataset.unpick); render(); renderCompare(); }
+  if (un) { const id = un.dataset.unpick; picked.delete(id); patchCard(id); refreshMarker(id); updateCmpBar(); renderCompare(); }
   const op = e.target.closest("[data-open]");
   if (op) { e.preventDefault(); openSheet(op.dataset.open); }
   if (e.target.closest("#cmpclose")) $("#compare").classList.remove("open");
 });
 $("#cmpbtn").onclick = () => $("#compare").classList.contains("open") ? $("#compare").classList.remove("open") : renderCompare();
-$("#cmpclear").onclick = () => { picked.clear(); $("#compare").classList.remove("open"); render(); };
+$("#cmpclear").onclick = () => { picked.clear(); $("#compare").classList.remove("open"); render({ keep: true }); };
 $("#modal").addEventListener("click", (e) => {
   if (e.target.id === "modal") $("#modal").classList.remove("open");
   if (e.target.matches("#gallery img")) { $("#zoom img").src = e.target.src; $("#zoom").classList.add("open"); }
@@ -545,12 +643,13 @@ $("#sizes").addEventListener("click", (e) => {
   state.sizes = state.sizes.includes(s) ? state.sizes.filter((x) => x !== s) : [...state.sizes, s];
   render();
 });
+$("#lieuclear").onclick = () => setLieu(state.lieu);
 let qTimer;
 $("#q").addEventListener("input", (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value; render(); }, 120); });
 for (const id of ["maxprice", "tripkey", "tripmax", "sort"])
   $("#" + id).addEventListener("input", (e) => { state[id] = e.target.value; render(); });
 $("#reset").onclick = () => {
-  Object.assign(state, { vue: "normal", q: "", maxprice: "", sizes: [], tripkey: "", tripmax: "" });
+  Object.assign(state, { vue: "normal", q: "", maxprice: "", sizes: [], tripkey: "", tripmax: "", lieu: "" });
   for (const id of ["q", "maxprice", "tripkey", "tripmax"]) $("#" + id).value = "";
   render();
 };
@@ -601,6 +700,7 @@ async function showIso(value) {
   try { dests = await get(`${DB}/destinations.json?_shape=array`); } catch { dests = []; }
   listings = await get(`${DB}/carte.json?_shape=array&_size=max`);
   byId = Object.fromEntries(listings.map((l) => [l.id, l]));
+  for (const l of listings) l._txt = `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase();
 
   const sorts = [["premiere_vue", "Plus récentes"], ["prix", "Prix croissant"]];
   const trips = [];
@@ -638,16 +738,10 @@ async function showIso(value) {
     L.marker([d.lat, d.lng], { icon: L.divIcon({ className: "", html: `<span class="dest">${esc(d.nom)}</span>` }),
                                zIndexOffset: 1000 }).addTo(map);
 
-  for (const l of listings) {
-    if (l.latitude == null) continue;
-    const m = L.marker([l.latitude, l.longitude], { icon: pinIcon(l, ""), prix: l.prix, pinClass: "" });
-    m.on("click", () => focus(l.id, false));
-    markers[l.id] = m;
-  }
   render();
   // Cadre la carte sur les annonces, en laissant la place du panneau.
   // Bornes aux 5e–95e centiles : quelques annonces éloignées ne dézooment pas toute la carte.
-  const pts = Object.values(markers).map((m) => m.getLatLng());
+  const pts = [...groups.values()].map((g) => L.latLng(g.lat, g.lng));
   const q = (arr, p) => arr.sort((a, b) => a - b)[Math.floor(p * (arr.length - 1))];
   if (pts.length) map.fitBounds([
     [q(pts.map((p) => p.lat), .05), q(pts.map((p) => p.lng), .05)],
