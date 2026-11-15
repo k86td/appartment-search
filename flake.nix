@@ -46,9 +46,11 @@
         # Lance Datasette sur listings.db du dossier courant, avec le metadata.yml du repo.
         ui = pkgs.writeShellApplication {
           name = "appartment-search-ui";
-          runtimeInputs = [ datasetteEnv ];
+          runtimeInputs = [ datasetteEnv appartment-search ];
           text = ''
             img="''${IMAGES:-images}"
+            # Crée les tables/vues manquantes (nouvelle version, base jamais scrapée...).
+            appartment-search --init -c "''${CONFIG:-config.toml}" --db "''${DB:-listings.db}"
             mkdir -p "$img"
             exec datasette "''${DB:-listings.db}" -m ${./metadata.yml} --template-dir ${./templates} \
               --static images:"$img" "$@"

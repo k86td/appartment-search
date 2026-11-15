@@ -21,7 +21,7 @@ nix run .#otp-build   # télécharge OSM + GTFS du RTC, construit le graphe dans
 nix run .#otp-serve   # API sur http://localhost:8080
 ```
 
-Variables UI : `DB` (défaut `listings.db`), `IMAGES` (défaut `images`).
+Variables UI : `DB` (défaut `listings.db`), `IMAGES` (défaut `images`), `CONFIG` (défaut `config.toml`). Au démarrage, l'UI crée les tables et vues manquantes.
 
 Variables OTP : `OTP_MEM` (défaut `4G`), `OTP_DIR` (défaut `otp-data`), `OTP_PORT`, `OTP_BBOX`.
 Quand `[trajets]` est configuré et qu'OTP tourne, chaque passage calcule les temps bus / vélo / auto

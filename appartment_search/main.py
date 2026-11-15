@@ -81,13 +81,28 @@ def main() -> None:
     parser.add_argument("-c", "--config", default="config.toml")
     parser.add_argument("--trajets-seulement", action="store_true",
                         help="ne scrape pas, calcule seulement les temps de trajet manquants")
+    parser.add_argument("--db", help="chemin de la base (remplace `database` de la config)")
+    parser.add_argument("--init", action="store_true",
+                        help="crée/met à jour les tables et vues sans rien scraper (lancé par l'UI)")
     parser.add_argument("--isochrones", action="store_true",
                         help="calcule la grille d'isochrones (long, à faire une fois ; reprend où il était)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    with open(args.config, "rb") as f:
-        config = tomllib.load(f)
+    try:
+        with open(args.config, "rb") as f:
+            config = tomllib.load(f)
+    except FileNotFoundError:
+        if not args.init:
+            raise
+        config = {}
+    if args.db:
+        config["database"] = args.db
+    if args.init:
+        conn = db.connect(config.get("database", "listings.db"))
+        trajets.create_tables(conn, config.get("trajets", {}).get("destinations", []))
+        conn.executescript(isochrones.SCHEMA)
+        return
     if args.isochrones:
         t = config.get("trajets", {})
         conn = db.connect(config.get("database", "listings.db"))
