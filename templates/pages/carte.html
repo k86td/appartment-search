@@ -27,6 +27,22 @@
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+
+  /* ---------- Animations (transform / opacity seulement : composées par le GPU) ---------- */
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes up { from { opacity: 0; transform: translateY(12px); } }
+  @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } }
+  @keyframes beat { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  .card { animation: cardIn .3s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 22ms); }
+  .card.noanim { animation: none; }
+  .chip, .icon-btn, .mk, #cmpbar button, .tag { transition: background .15s, color .15s, border-color .15s, opacity .15s, transform .1s; }
+  .pin, .cluster { transition: background .15s, color .15s, border-color .15s; }
+  .leaflet-marker-icon .pin, .leaflet-marker-icon .cluster { animation: fade .25s ease both; }
+  .empty { animation: fade .25s ease both; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
   body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg);
          color: var(--text); height: 100vh; overflow: hidden; }
   #map { position: fixed; inset: 0; }
@@ -67,7 +83,13 @@
          background: var(--panel-2); border-radius: 10px; }
   .seg button { border: none; background: none; padding: 5px 0; border-radius: 8px; color: var(--muted);
                 font-size: 13px; font-weight: 600; }
-  .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg { position: relative; }
+  .seg button { position: relative; z-index: 1; transition: color .2s; }
+  .seg button.on { color: var(--text); }
+  /* Indicateur qui glisse sous l'onglet actif */
+  .seg-ind { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 4);
+             border-radius: 8px; background: var(--panel); box-shadow: 0 1px 2px rgba(0,0,0,.12);
+             transform: translateX(calc(100% * var(--k, 0))); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
   .seg button i { font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted); margin-left: 2px; }
   .tag.new { background: var(--accent-soft); color: var(--accent); }
 
@@ -133,13 +155,14 @@
   .mk:active { transform: scale(.88); }
   .mk.like:hover, .mk.like.on { color: var(--like); }
   .mk.like.on svg { fill: currentColor; }
+  .mk.pop svg { animation: beat .35s cubic-bezier(.2,.8,.2,1); }
   .mk.hide.on, .mk.pick.on { color: var(--accent); }
   @media (hover: none) { .mk { opacity: .7; } }
 
   /* Barre de comparaison */
   #cmpbar { display: none; align-items: center; gap: 8px; margin: 0 10px 10px; padding: 8px 8px 8px 14px;
             border-radius: 12px; background: var(--text); color: var(--panel); font-weight: 600; font-size: 13px; }
-  #cmpbar.show { display: flex; }
+  #cmpbar.show { display: flex; animation: up .22s cubic-bezier(.2,.8,.2,1) both; }
   #cmpbar button { border: none; border-radius: 8px; padding: 6px 10px; background: var(--panel); color: var(--text); font-weight: 700; }
   #cmpbar .icon-btn { color: var(--panel); background: none; padding: 0; }
 
@@ -181,7 +204,10 @@
   /* ---------- Fiche détaillée ---------- */
   #modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; z-index: 2000;
            align-items: center; justify-content: center; backdrop-filter: blur(2px); }
-  #modal.open { display: flex; }
+  #modal.open { display: flex; animation: fade .18s ease both; }
+  #modal.open #sheet { animation: pop .24s cubic-bezier(.2,.8,.2,1) both; }
+  #modal.closing { animation: fade .16s ease reverse both; }
+  #modal.closing #sheet { animation: pop .16s ease reverse both; }
   #sheet { background: var(--panel); width: min(1100px, 94vw); max-height: 92vh; overflow-y: auto;
            border-radius: 16px; padding: 18px 20px; box-shadow: var(--shadow); }
   #sheet header { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; }
@@ -195,7 +221,9 @@
   #desc { white-space: pre-wrap; }
   #zoom { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: none; z-index: 3000;
           align-items: center; justify-content: center; user-select: none; }
-  #zoom.open { display: flex; }
+  #zoom.open { display: flex; animation: fade .18s ease both; }
+  #zoom img { transition: opacity .18s ease; }
+  #zoom img.loading { opacity: 0; }
   #zoom img { max-width: 88vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
   .zbtn { position: absolute; display: inline-flex; align-items: center; justify-content: center;
           width: 44px; height: 44px; border-radius: 999px; border: 1px solid rgba(255,255,255,.15);
@@ -216,7 +244,7 @@
              border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
              max-height: 50vh; overflow: auto; display: none; }
   body.collapsed #compare { left: 12px; }
-  #compare.open { display: block; }
+  #compare.open { display: block; animation: up .26s cubic-bezier(.2,.8,.2,1) both; }
   #compare table { border-collapse: collapse; width: 100%; font-size: 13px; }
   #compare th, #compare td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
   #compare th { color: var(--muted); font-weight: 500; white-space: nowrap; position: sticky; left: 0; background: var(--panel); }
@@ -243,8 +271,10 @@
     .seg { margin: 8px 12px 0; }
     .seg button { font-size: 12px; padding: 6px 0; }
     .seg button i { display: none; }
-    #morefilters { display: none; }
-    #side.showfilters #morefilters { display: block; }
+    #morefilters { display: grid; grid-template-rows: 0fr; opacity: 0;
+                   transition: grid-template-rows .25s cubic-bezier(.2,.8,.2,1), opacity .2s; }
+    #morefilters > .mf-inner { overflow: hidden; min-height: 0; }
+    #side.showfilters #morefilters { grid-template-rows: 1fr; opacity: 1; }
     .filters { padding: 8px 12px; }
     .sizes { padding: 0 12px 8px; }
     .listhead { padding: 8px 12px; }
@@ -286,13 +316,13 @@
   </div>
   <label class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     <input id="q" type="search" placeholder="Rechercher un titre, une rue, un quartier…" autocomplete="off"></label>
-  <div class="seg" id="vue">
+  <div class="seg" id="vue"><span class="seg-ind"></span>
     <button data-v="normal" class="on">Toutes <i></i></button>
     <button data-v="new" title="Vues pour la première fois dans les dernières 48 h">Nouvelles <i></i></button>
     <button data-v="aime">♥ Aimées <i></i></button>
     <button data-v="cache">Cachées <i></i></button>
   </div>
-  <div id="morefilters">
+  <div id="morefilters"><div class="mf-inner">
   <div class="filters" id="filters">
     <label class="chip" id="pricechip"><span class="muted">≤</span><input id="maxprice" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Prix max" size="7"><span class="muted">$</span></label>
     <label class="chip" id="tripchip"><select id="tripkey"><option value="">Trajet max</option></select>
@@ -304,7 +334,7 @@
     <span class="chip on lieu"><svg class="i" style="width:14px;height:14px"><use href="#ic-pin"/></svg><span id="lieutxt" class="ell"></span><span id="lieun" style="flex:none"></span>
       <button class="icon-btn" id="lieuclear" style="width:20px;height:20px;color:inherit" title="Retirer"><svg class="i" style="width:12px;height:12px"><use href="#ic-close"/></svg></button></span>
   </div>
-  </div>
+  </div></div>
   <div class="listhead">
     <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
     <select id="sort"></select>
@@ -493,6 +523,8 @@ async function setMarque(id, statut) {
   l.marque = nouveau;
   // Encore visible avec les filtres actuels ? On met à jour la carte seule, sinon on re-filtre.
   if (matches(l)) { patchCard(id); refreshMarker(id); } else render({ keep: true });
+  if (nouveau === "aime") requestAnimationFrame(() =>
+    $$(`[data-mark="aime"][data-id="${CSS.escape(id)}"]`).forEach((b) => b.classList.add("pop")));
   if ($("#modal").classList.contains("open")) openSheet(id);
 }
 
@@ -563,10 +595,11 @@ function filtered() {
   });
 }
 
-function cardHtml(l) {
+function cardHtml(l, i = -1) {
   const img = images(l)[0];
   const d = dispo(l);
-  return `<div class="card ${l.id === activeId ? "active" : ""} ${l.marque || ""}" data-id="${esc(l.id)}">
+  return `<div class="card ${l.id === activeId ? "active" : ""} ${l.marque || ""} ${i < 0 ? "noanim" : ""}"
+    data-id="${esc(l.id)}" style="--i:${Math.max(0, Math.min(i, 12))}">
     ${img ? `<img class="thumb" loading="lazy" decoding="async" src="${esc(img)}" alt="">` : '<div class="thumb"></div>'}
     <div class="body">
       <div class="line1"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
@@ -595,7 +628,7 @@ function appendCards(n = PAGE) {
   if (shown >= rows.length) return;
   const next = rows.slice(shown, shown + n);
   shown += next.length;
-  sentinel.insertAdjacentHTML("beforebegin", next.map(cardHtml).join(""));
+  sentinel.insertAdjacentHTML("beforebegin", next.map((l, i) => cardHtml(l, i)).join(""));
 }
 
 function render({ keep = false } = {}) {
@@ -629,7 +662,9 @@ function updateCmpBar() {
 }
 
 function syncControls() {
-  $$("#vue button").forEach((b) => b.classList.toggle("on", b.dataset.v === state.vue));
+  const vb = $$("#vue button");
+  vb.forEach((b) => b.classList.toggle("on", b.dataset.v === state.vue));
+  $("#vue").style.setProperty("--k", Math.max(0, vb.findIndex((b) => b.dataset.v === state.vue)));
   $$("#sizes .chip").forEach((c) => c.classList.toggle("on", state.sizes.includes(c.dataset.size)));
   $("#pricechip").classList.toggle("on", !!state.maxprice);
   $("#tripchip").classList.toggle("on", !!(state.tripkey && state.tripmax));
@@ -681,6 +716,13 @@ function contactHtml(l) {
   return parts.length ? `<div class="meta contact">Contact : ${parts.join(" · ")}</div>` : "";
 }
 
+function closeModal() {
+  const m = $("#modal");
+  if (!m.classList.contains("open") || m.classList.contains("closing")) return;
+  m.classList.add("closing");
+  setTimeout(() => m.classList.remove("open", "closing"), 160);
+}
+
 function openSheet(id) {
   const l = byId[id];
   $("#sheet").innerHTML = `
@@ -702,9 +744,9 @@ function openSheet(id) {
     <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
     <div id="desc">${esc(l.description || "")}</div>`;
   $("#modal").classList.add("open");
-  $("#close").onclick = () => $("#modal").classList.remove("open");
+  $("#close").onclick = closeModal;
   $("#onmap").onclick = () => {
-    $("#modal").classList.remove("open");
+    closeModal();
     if (isMobile() && $("#side").classList.contains("expanded")) {
       $("#side").classList.remove("expanded");
       setTimeout(() => focus(id, true), 280);          // attendre la fin de l'animation du panneau
@@ -767,7 +809,7 @@ $("#compare").addEventListener("click", (e) => {
 $("#cmpbtn").onclick = () => $("#compare").classList.contains("open") ? $("#compare").classList.remove("open") : renderCompare();
 $("#cmpclear").onclick = () => { picked.clear(); $("#compare").classList.remove("open"); render({ keep: true }); };
 $("#modal").addEventListener("click", (e) => {
-  if (e.target.id === "modal") $("#modal").classList.remove("open");
+  if (e.target.id === "modal") closeModal();
   if (e.target.matches("#gallery img")) openZoom([...$$("#gallery img")].indexOf(e.target));
 });
 // Visionneuse : flèches à l'écran, ← → au clavier, glisser sur mobile.
@@ -780,7 +822,13 @@ function openZoom(i) {
 }
 function showZoom(i) {
   zIdx = (i + zImgs.length) % zImgs.length;
-  $("#zoom img").src = zImgs[zIdx];
+  const img = $("#zoom img");
+  if (img.src !== zImgs[zIdx]) {
+    img.classList.add("loading");
+    img.onload = () => img.classList.remove("loading");
+    img.src = zImgs[zIdx];
+    if (img.complete) img.classList.remove("loading");
+  }
   $("#zcount").textContent = `${zIdx + 1} / ${zImgs.length}`;
   // Précharge les voisines pour une navigation instantanée.
   for (const d of [1, -1]) new Image().src = zImgs[(zIdx + d + zImgs.length) % zImgs.length];
@@ -845,7 +893,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft") { showZoom(zIdx - 1); e.preventDefault(); return; }
     if (e.key === "Escape") { closeZoom(); return; }       // Échap ferme d'abord la photo, puis la fiche
   }
-  if (e.key === "Escape") $("#modal").classList.remove("open");
+  if (e.key === "Escape") closeModal();
   if (e.key === "[" && !e.target.closest("input, select")) toggleSide();
   if (e.key === "/" && !e.target.closest("input, select")) { e.preventDefault(); toggleSide(false); $("#q").focus(); }
 });
