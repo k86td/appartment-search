@@ -20,8 +20,12 @@ databases:
         title: Annonces actives sur la carte
         sql: |-
           SELECT t.*,
-            (SELECT json_group_array(COALESCE('/images/' || chemin, url))
-               FROM (SELECT * FROM images i WHERE i.listing_id = t.id ORDER BY idx)) AS images,
+            COALESCE(
+              (SELECT json_group_array(COALESCE('/images/' || chemin, url))
+                 FROM (SELECT * FROM images i WHERE i.listing_id = t.id ORDER BY idx)
+                 HAVING count(*) > 0),
+              (SELECT json_extract(l.raw, '$.imageUrls') FROM listings l WHERE l.id = t.id)
+            ) AS images,
             c.nom AS contact_nom, c.type AS contact_type, c.telephones, c.courriels,
             c.telephone_partiel, c.site_web, c.profil_url
           FROM annonces_trajets t LEFT JOIN contacts c ON c.listing_id = t.id

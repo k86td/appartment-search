@@ -177,7 +177,15 @@ def save_contact(conn: sqlite3.Connection, listing_id: str, c: Contact) -> None:
 
 def backfill(conn: sqlite3.Connection, scrapers: dict) -> None:
     """Remplit contacts et images pour les annonces dont les détails ont été
-    récupérés avant l'ajout de ces tables (à partir de details.raw)."""
+    récupérés avant l'ajout de ces tables (à partir de details.raw), et nettoie
+    les descriptions HTML enregistrées avant le nettoyage."""
+    from .scrapers.base import texte_propre
+    for listing_id, desc in conn.execute(
+        "SELECT listing_id, description FROM details WHERE description LIKE '%<%' OR description LIKE '%&%;%'"
+    ).fetchall():
+        conn.execute("UPDATE details SET description = ? WHERE listing_id = ?",
+                     (texte_propre(desc), listing_id))
+
     rows = conn.execute(
         """SELECT d.listing_id, d.images, d.raw FROM details d
            WHERE NOT EXISTS (SELECT 1 FROM contacts c WHERE c.listing_id = d.listing_id)"""

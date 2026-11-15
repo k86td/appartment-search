@@ -9,7 +9,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 
 from ..models import Contact, Details, Listing
-from .base import Scraper, courriels, taille_depuis_texte, telephones
+from .base import Scraper, courriels, taille_depuis_texte, telephones, texte_propre
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def to_contact(raw: dict, state: dict) -> Contact:
     pid = poster.get("posterId")
     profil = next((v for k, v in state.items() if pid and k.endswith(f":{pid}")), {})
     path = profil.get("profilePath")
-    desc = raw.get("description")
+    desc = texte_propre(raw.get("description"))
     return Contact(
         nom=profil.get("name"),
         type={"FSBO": "particulier", "KMB": "professionnel"}.get(poster.get("sellerType"), poster.get("sellerType")),
@@ -122,7 +122,7 @@ def to_details(raw: dict, others: dict) -> Details:
             ", ".join(canon) or None,
         )
     return Details(
-        description=raw.get("description"),
+        description=texte_propre(raw.get("description")),
         images=raw.get("imageUrls") or [],
         attributs=attributs,
         contact=to_contact(raw, others.get("autres", {})),

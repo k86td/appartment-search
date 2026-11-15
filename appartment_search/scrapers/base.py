@@ -1,3 +1,4 @@
+import html
 import re
 from abc import ABC, abstractmethod
 
@@ -35,6 +36,23 @@ class Scraper(ABC):
     def image_download_url(self, url: str) -> str:
         """URL à télécharger pour le cache local (ex. meilleure résolution)."""
         return url
+
+
+_BLOCK_RE = re.compile(r"<\s*(br|/p|/div|/li|/h[1-6])\b[^>]*>", re.IGNORECASE)
+_LI_RE = re.compile(r"<\s*li\b[^>]*>", re.IGNORECASE)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def texte_propre(desc: str | None) -> str | None:
+    """HTML d'annonce -> texte : sauts de ligne conservés, balises et entités retirées."""
+    if not desc or "<" not in desc and "&" not in desc:
+        return desc
+    t = _BLOCK_RE.sub("\n", desc)
+    t = _LI_RE.sub("\n• ", t)
+    t = html.unescape(_TAG_RE.sub("", t)).replace("\xa0", " ")
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
 
 
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?1[\s.-]?)?\(?([2-9]\d{2})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})(?!\d)")
