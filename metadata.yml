@@ -1,0 +1,17 @@
+title: Recherche d'appartement
+databases:
+  listings:
+    tables:
+      listings:
+        sort_desc: premiere_vue
+        facets: [source, taille, actif]
+        hidden: false
+    queries:
+      nouvelles:
+        title: Annonces actives avec position
+        sql: |-
+          SELECT l.premiere_vue, l.source, l.titre, l.prix, l.taille,
+                 l.adresse, l.disponible, l.url, g.lat AS latitude, g.lng AS longitude
+          FROM listings l LEFT JOIN geo g ON g.adresse = l.adresse
+          WHERE l.actif = 1
+          ORDER BY l.premiere_vue DESC

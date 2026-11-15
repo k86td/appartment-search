@@ -1,0 +1,14 @@
+database = "listings.db"
+
+[filtres]
+# prix_max = 1400
+# tailles = ["3½", "4½"]
+
+[scrapers.kijiji]
+enabled = true
+max_pages = 5      # par URL ; s'arrête plus tôt si une page est entièrement connue
+delay = 2.0        # secondes entre deux pages
+urls = [
+    # Locations long terme, Ville de Québec, plus récentes en premier
+    "https://www.kijiji.ca/b-appartement-condo/ville-de-quebec/k0c37l1700124?sort=dateDesc",
+]

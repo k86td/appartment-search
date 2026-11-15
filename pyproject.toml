@@ -1,0 +1,21 @@
+[project]
+name = "appartment-search"
+version = "0.1.0"
+description = "Scrape des sites de logement et les expose dans Datasette"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+ui = [
+    "datasette>=0.64",
+    "datasette-cluster-map>=0.18",
+]
+
+[project.scripts]
+appartment-search = "appartment_search.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
