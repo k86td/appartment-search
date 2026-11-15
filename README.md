@@ -22,6 +22,10 @@ nix run .#otp-serve   # API sur http://localhost:8080
 ```
 
 Variables : `OTP_MEM` (défaut `4G`), `OTP_DIR` (défaut `otp-data`), `OTP_PORT`, `OTP_BBOX`.
+Quand `[trajets]` est configuré et qu'OTP tourne, chaque passage calcule les temps bus / vélo / auto
+vers chaque destination (vue `annonces_trajets`). Sans scraper : `appartment-search --trajets-seulement`.
+Pour tout recalculer (ex. après un nouveau graphe) : `DELETE FROM trajets;`.
+
 Relancer `otp-build` quand le RTC change ses horaires (le GTFS est retéléchargé à chaque fois).
 
 ### Avec pip

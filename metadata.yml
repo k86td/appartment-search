@@ -2,6 +2,9 @@ title: Recherche d'appartement
 databases:
   listings:
     tables:
+      annonces_trajets:
+        sort: ulaval_bus
+        facets: [source, taille, meuble, animaux, chauffage_inclus]
       annonces:
         sort_desc: premiere_vue
         facets: [source, taille, meuble, animaux, chauffage_inclus, actif]
@@ -14,4 +17,4 @@ databases:
       carte:
         title: Annonces actives sur la carte
         sql: |-
-          SELECT * FROM annonces WHERE actif = 1 ORDER BY premiere_vue DESC
+          SELECT * FROM annonces_trajets WHERE actif = 1 ORDER BY premiere_vue DESC

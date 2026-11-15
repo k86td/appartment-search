@@ -13,3 +13,18 @@ urls = [
     # Locations long terme, Ville de Québec, plus récentes en premier
     "https://www.kijiji.ca/b-appartement-condo/ville-de-quebec/k0c37l1700124?sort=dateDesc",
 ]
+
+[trajets]
+otp_url = "http://localhost:8080/otp/gtfs/v1"
+arrivee = "08:30"        # arrivée visée le prochain mardi (autobus : tient compte des horaires)
+max_par_passage = 500    # requêtes OTP max par passage
+
+[[trajets.destinations]]
+nom = "ULaval"           # Pavillon Adrien-Pouliot
+lat = 46.77866
+lng = -71.27458
+
+[[trajets.destinations]]
+nom = "Travail"          # 400 Rue Nolin
+lat = 46.81559
+lng = -71.26786

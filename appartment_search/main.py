@@ -3,7 +3,7 @@ import logging
 import time
 import tomllib
 
-from . import db
+from . import db, trajets
 from .filters import keep
 from .notify import Notifier
 from .scrapers import SCRAPERS
@@ -36,6 +36,9 @@ def run(config: dict) -> None:
             for n in notifiers:
                 n.notify(new)
 
+    if "trajets" in config:
+        trajets.calculer(conn, config["trajets"])
+
 
 def fetch_all_details(conn, scraper, cfg: dict) -> None:
     """Ouvre chaque annonce pas encore en cache (nouvelles + échecs précédents)."""
@@ -64,11 +67,17 @@ def fetch_all_details(conn, scraper, cfg: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", default="config.toml")
+    parser.add_argument("--trajets-seulement", action="store_true",
+                        help="ne scrape pas, calcule seulement les temps de trajet manquants")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     with open(args.config, "rb") as f:
-        run(tomllib.load(f))
+        config = tomllib.load(f)
+    if args.trajets_seulement:
+        trajets.calculer(db.connect(config.get("database", "listings.db")), config.get("trajets", {}))
+    else:
+        run(config)
 
 
 if __name__ == "__main__":
