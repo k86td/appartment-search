@@ -229,7 +229,9 @@
     .mobile-only { display: inline-flex; }
     #side { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 46dvh; border-radius: 18px 18px 0 0;
             border-bottom: none; transition: height .25s ease, transform .25s ease; }
-    #side.expanded { height: calc(100dvh - 56px); }
+    #side.expanded { height: 100dvh; border-radius: 0; padding-top: env(safe-area-inset-top); }
+    #side.dragging { transition: none; }
+    #side .head { touch-action: none; }
     body.collapsed #side { transform: translateY(100%); }
     .grip { display: block; flex: none; width: 100%; height: 22px; border: none; background: none; padding: 0;
             position: relative; cursor: grab; touch-action: none; }
@@ -798,16 +800,41 @@ $("#zoom").addEventListener("touchend", (e) => {
 
 const isMobile = () => matchMedia("(max-width: 720px)").matches;
 $("#grip").onclick = () => $("#side").classList.toggle("expanded");
-// Glisser la poignée vers le haut / le bas pour agrandir / réduire / masquer la liste.
-let gy = null;
-$("#grip").addEventListener("touchstart", (e) => { gy = e.touches[0].clientY; }, { passive: true });
-$("#grip").addEventListener("touchend", (e) => {
-  if (gy == null) return;
-  const dy = e.changedTouches[0].clientY - gy; gy = null;
+// Glisser la poignée ou l'en-tête : la liste suit le doigt, puis se cale sur
+// plein écran / mi-hauteur / masquée selon la position et la vitesse du geste.
+let drag = null;
+function dragStart(e) {
+  if (!isMobile() || e.target.closest("button:not(.grip), input, select")) return;
   const side = $("#side");
-  if (dy < -30) side.classList.add("expanded");
-  else if (dy > 30) side.classList.contains("expanded") ? side.classList.remove("expanded") : toggleSide(true);
-});
+  drag = { y: e.touches[0].clientY, h: side.offsetHeight, t: performance.now(), moved: false };
+  side.classList.add("dragging");
+}
+function dragMove(e) {
+  if (!drag) return;
+  const dy = e.touches[0].clientY - drag.y;
+  if (Math.abs(dy) > 4) drag.moved = true;
+  $("#side").style.height = `${Math.min(innerHeight, Math.max(60, drag.h - dy))}px`;
+}
+function dragEnd(e) {
+  if (!drag) return;
+  const side = $("#side"), H = innerHeight;
+  const dy = e.changedTouches[0].clientY - drag.y;
+  const v = dy / Math.max(1, performance.now() - drag.t);          // px/ms, > 0 = vers le bas
+  const h = drag.h - dy, moved = drag.moved;
+  drag = null;
+  side.classList.remove("dragging");
+  side.style.height = "";
+  if (!moved) return;                                               // simple toucher : géré par onclick
+  if (v < -0.5 || h > H * 0.72) side.classList.add("expanded");
+  else if (v > 0.5 && !side.classList.contains("expanded") || h < H * 0.22) { side.classList.remove("expanded"); toggleSide(true); }
+  else side.classList.remove("expanded");
+}
+for (const el of [$("#grip"), $("#side .head")]) {
+  el.addEventListener("touchstart", dragStart, { passive: true });
+  el.addEventListener("touchmove", dragMove, { passive: true });
+  el.addEventListener("touchend", dragEnd);
+  el.addEventListener("touchcancel", dragEnd);
+}
 $("#ftoggle").onclick = () => $("#side").classList.toggle("showfilters");
 const toggleSide = (v) => { state.collapsed = v ?? !state.collapsed; syncControls(); save(); };
 $("#collapse").onclick = () => toggleSide(true);
