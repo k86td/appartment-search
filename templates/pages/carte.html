@@ -697,7 +697,7 @@ function focus(id, pan) {
   el?.classList.add("active");
   refreshMarker(id);
   if (state.collapsed && !pan) toggleSide(false);
-  if (!pan && isMobile()) $("#side").classList.remove("expanded");
+  if (!pan && isMobile() && $("#side").classList.contains("expanded")) setExpanded(false);
   el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   const l = byId[id];
   if (pan && l.latitude != null) showAt(L.latLng(l.latitude, l.longitude), Math.max(map.getZoom(), 15));
@@ -716,7 +716,38 @@ function contactHtml(l) {
   return parts.length ? `<div class="meta contact">Contact : ${parts.join(" · ")}</div>` : "";
 }
 
-function closeModal() {
+// ---------- Retour arrière (geste / bouton) : chaque couche ouverte = une entrée d'historique ----------
+// Ouvrir la fiche, une photo, la comparaison ou la liste plein écran ajoute une entrée ;
+// le geste « retour » du téléphone referme la couche du dessus au lieu de quitter la page.
+const layers = [];
+const closers = {
+  sheet: () => _closeSheet(),
+  zoom: () => $("#zoom").classList.remove("open"),
+  compare: () => $("#compare").classList.remove("open"),
+  list: () => $("#side").classList.remove("expanded"),
+};
+history.replaceState({ depth: 0 }, "");
+function openLayer(name) {
+  if (layers.includes(name)) return;
+  layers.push(name);
+  history.pushState({ depth: layers.length }, "");
+}
+function closeLayer(name) {
+  const i = layers.indexOf(name);
+  if (i < 0) { closers[name](); return; }
+  history.go(-(layers.length - i));          // popstate referme cette couche et celles au-dessus
+}
+addEventListener("popstate", (e) => {
+  const depth = e.state?.depth ?? 0;
+  while (layers.length > depth) closers[layers.pop()]();
+});
+function setExpanded(on) {
+  if (on) { $("#side").classList.add("expanded"); openLayer("list"); }
+  else closeLayer("list");
+}
+
+const closeModal = () => closeLayer("sheet");
+function _closeSheet() {
   const m = $("#modal");
   if (!m.classList.contains("open") || m.classList.contains("closing")) return;
   m.classList.add("closing");
@@ -743,20 +774,20 @@ function openSheet(id) {
     ${timesHtml(l)}
     <div id="gallery">${images(l).map((u) => `<img loading="lazy" src="${esc(u)}">`).join("")}</div>
     <div id="desc">${esc(l.description || "")}</div>`;
+  if (!$("#modal").classList.contains("open")) openLayer("sheet");
   $("#modal").classList.add("open");
   $("#close").onclick = closeModal;
   $("#onmap").onclick = () => {
-    closeModal();
-    if (isMobile() && $("#side").classList.contains("expanded")) {
-      $("#side").classList.remove("expanded");
-      setTimeout(() => focus(id, true), 280);          // attendre la fin de l'animation du panneau
-    } else focus(id, true);
+    const wasFull = isMobile() && $("#side").classList.contains("expanded");
+    closeLayer(layers.includes("list") ? "list" : "sheet");   // ferme la fiche (et la liste plein écran)
+    if (wasFull) { $("#side").classList.remove("expanded"); setTimeout(() => focus(id, true), 280); }
+    else focus(id, true);
   };
 }
 
 function renderCompare() {
   const rows = listings.filter((l) => picked.has(l.id));
-  if (!rows.length) { $("#compare").classList.remove("open"); return; }
+  if (!rows.length) { closeLayer("compare"); return; }
   const line = (label, f) => `<tr><th>${label}</th>${rows.map((l) => `<td>${f(l)}</td>`).join("")}</tr>`;
   let html = `<table>
     ${line(`<button class="icon-btn" id="cmpclose" title="Fermer">${ICONS.close}</button>`, (l) => `<button data-unpick="${esc(l.id)}">retirer</button>`)}
@@ -775,6 +806,7 @@ function renderCompare() {
   for (const d of dests) for (const [m, n] of MODES)
     html += line(`${esc(d.nom)} · ${n}`, (l) => `<span class="${timeClass(l[`${d.slug}_${m}`])}">${fmt(l[`${d.slug}_${m}`])}</span>`);
   $("#compare").innerHTML = html + "</table>";
+  if (!$("#compare").classList.contains("open")) openLayer("compare");
   $("#compare").classList.add("open");
 }
 
@@ -804,10 +836,10 @@ $("#compare").addEventListener("click", (e) => {
   if (un) { const id = un.dataset.unpick; picked.delete(id); patchCard(id); refreshMarker(id); updateCmpBar(); renderCompare(); }
   const op = e.target.closest("[data-open]");
   if (op) { e.preventDefault(); openSheet(op.dataset.open); }
-  if (e.target.closest("#cmpclose")) $("#compare").classList.remove("open");
+  if (e.target.closest("#cmpclose")) closeLayer("compare");
 });
-$("#cmpbtn").onclick = () => $("#compare").classList.contains("open") ? $("#compare").classList.remove("open") : renderCompare();
-$("#cmpclear").onclick = () => { picked.clear(); $("#compare").classList.remove("open"); render({ keep: true }); };
+$("#cmpbtn").onclick = () => $("#compare").classList.contains("open") ? closeLayer("compare") : renderCompare();
+$("#cmpclear").onclick = () => { picked.clear(); closeLayer("compare"); render({ keep: true }); };
 $("#modal").addEventListener("click", (e) => {
   if (e.target.id === "modal") closeModal();
   if (e.target.matches("#gallery img")) openZoom([...$$("#gallery img")].indexOf(e.target));
@@ -818,6 +850,7 @@ function openZoom(i) {
   zImgs = $$("#gallery img").map((im) => im.src);
   $("#zoom").classList.toggle("single", zImgs.length < 2);
   showZoom(i);
+  openLayer("zoom");
   $("#zoom").classList.add("open");
 }
 function showZoom(i) {
@@ -833,7 +866,7 @@ function showZoom(i) {
   // Précharge les voisines pour une navigation instantanée.
   for (const d of [1, -1]) new Image().src = zImgs[(zIdx + d + zImgs.length) % zImgs.length];
 }
-const closeZoom = () => $("#zoom").classList.remove("open");
+const closeZoom = () => closeLayer("zoom");
 $("#zprev").onclick = (e) => { e.stopPropagation(); showZoom(zIdx - 1); };
 $("#znext").onclick = (e) => { e.stopPropagation(); showZoom(zIdx + 1); };
 $("#zclose").onclick = closeZoom;
@@ -847,7 +880,7 @@ $("#zoom").addEventListener("touchend", (e) => {
 });
 
 const isMobile = () => matchMedia("(max-width: 720px)").matches;
-$("#grip").onclick = () => $("#side").classList.toggle("expanded");
+$("#grip").onclick = () => setExpanded(!$("#side").classList.contains("expanded"));
 // Glisser la poignée ou l'en-tête : la liste suit le doigt, puis se cale sur
 // plein écran / mi-hauteur / masquée selon la position et la vitesse du geste.
 let drag = null;
@@ -873,9 +906,9 @@ function dragEnd(e) {
   side.classList.remove("dragging");
   side.style.height = "";
   if (!moved) return;                                               // simple toucher : géré par onclick
-  if (v < -0.5 || h > H * 0.72) side.classList.add("expanded");
-  else if (v > 0.5 && !side.classList.contains("expanded") || h < H * 0.22) { side.classList.remove("expanded"); toggleSide(true); }
-  else side.classList.remove("expanded");
+  if (v < -0.5 || h > H * 0.72) setExpanded(true);
+  else if (v > 0.5 && !side.classList.contains("expanded") || h < H * 0.22) { setExpanded(false); toggleSide(true); }
+  else setExpanded(false);
 }
 for (const el of [$("#grip"), $("#side .head")]) {
   el.addEventListener("touchstart", dragStart, { passive: true });
