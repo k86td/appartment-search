@@ -86,6 +86,8 @@
   .chip input::placeholder { color: var(--muted); font-weight: 500; }
   .chip select { cursor: pointer; }
   .chip .muted { color: var(--muted); font-weight: 500; }
+  .chip.lieu { max-width: 100%; min-width: 0; }
+  .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .sizes { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 14px 10px; }
   .sizes .chip { height: 26px; padding: 0 9px; font-size: 12px; }
 
@@ -104,8 +106,9 @@
   .card.cache { opacity: .5; }
   .thumb { width: 96px; height: 80px; border-radius: 10px; object-fit: cover; background: var(--panel-2); display: block; }
   .card .body { min-width: 0; display: flex; flex-direction: column; gap: 1px; padding-right: 30px; }
-  .line1 { display: flex; align-items: baseline; gap: 6px; }
-  .price { font-size: 15px; font-weight: 750; letter-spacing: -.01em; }
+  .line1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; }
+  .price { font-size: 15px; font-weight: 750; letter-spacing: -.01em; white-space: nowrap; flex: none; }
+  .line1 .tag { white-space: nowrap; flex: none; }
   .tag { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--panel-2);
          color: var(--muted); }
   .card.active .tag { background: var(--panel); }
@@ -238,7 +241,7 @@
   </div>
   <div class="sizes" id="sizes"></div>
   <div class="filters" style="padding-top:0" id="lieuchip" hidden>
-    <span class="chip on"><svg class="i" style="width:14px;height:14px"><use href="#ic-pin"/></svg><span id="lieutxt"></span>
+    <span class="chip on lieu"><svg class="i" style="width:14px;height:14px"><use href="#ic-pin"/></svg><span id="lieutxt" class="ell"></span><span id="lieun" style="flex:none"></span>
       <button class="icon-btn" id="lieuclear" style="width:20px;height:20px;color:inherit" title="Retirer"><svg class="i" style="width:12px;height:12px"><use href="#ic-close"/></svg></button></span>
   </div>
   <div class="listhead">
@@ -528,7 +531,12 @@ function syncControls() {
   $("#tripchip").classList.toggle("on", !!(state.tripkey && state.tripmax));
   const g = state.lieu && groups.get(state.lieu);
   $("#lieuchip").hidden = !state.lieu;
-  if (state.lieu) $("#lieutxt").textContent = g ? `${byId[g.ids[0]].adresse || "Immeuble"} · ${rows.length}` : "Immeuble";
+  if (state.lieu) {
+    const adr = (g && byId[g.ids[0]].adresse || "Immeuble").replace(/,\s*Canada$/i, "");
+    $("#lieutxt").textContent = adr;
+    $("#lieun").textContent = `· ${rows.length}`;
+    $("#lieutxt").title = adr;
+  }
   document.body.classList.toggle("collapsed", state.collapsed);
 }
 
