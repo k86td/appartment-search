@@ -27,9 +27,13 @@ databases:
               (SELECT json_extract(l.raw, '$.imageUrls') FROM listings l WHERE l.id = t.id)
             ) AS images,
             c.nom AS contact_nom, c.type AS contact_type, c.telephones, c.courriels,
-            c.telephone_partiel, c.site_web, c.profil_url
-          FROM annonces_trajets t LEFT JOIN contacts c ON c.listing_id = t.id
-          WHERE t.actif = 1 ORDER BY t.premiere_vue DESC
+            c.telephone_partiel, c.site_web, c.profil_url,
+            m.statut AS marque
+          FROM annonces_trajets t
+          LEFT JOIN contacts c ON c.listing_id = t.id
+          LEFT JOIN marques m ON m.listing_id = t.id
+          WHERE t.actif = 1 OR m.statut = 'aime'   -- les aimées restent visibles même retirées
+          ORDER BY t.premiere_vue DESC
       isochrone:
         title: Grille d'isochrone (une destination, un mode)
         sql: |-
@@ -39,3 +43,13 @@ databases:
       isochrones_dispo:
         title: Isochrones calculées
         sql: SELECT DISTINCT destination, mode FROM isochrones
+      marquer:
+        title: Marquer une annonce (aime / cache)
+        write: true
+        sql: |-
+          INSERT OR REPLACE INTO marques (listing_id, statut, le)
+          VALUES (:listing_id, :statut, datetime('now'))
+      demarquer:
+        title: Retirer la marque d'une annonce
+        write: true
+        sql: DELETE FROM marques WHERE listing_id = :listing_id

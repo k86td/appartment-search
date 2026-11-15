@@ -6,6 +6,7 @@ coordonnées et caractéristiques. La page de chaque unité ajoute l'adresse com
 (code postal), le plan et la galerie de photos."""
 
 import logging
+import re
 from bs4 import BeautifulSoup
 
 from ..models import Contact, Details, Listing
@@ -76,7 +77,9 @@ def to_listing(hit: dict) -> Listing:
         disponible=dispo[:10] if dispo else None,
         lat=geo.get("lat") or _val(hit, "Latitude"),
         lng=geo.get("lng") or _val(hit, "Longitude"),
-        raw={k: v for k, v in hit.items() if k != "html"},
+        # imageUrls : vignette de la carte, affichée tant que la page de l'unité n'est pas ouverte.
+        raw={**{k: v for k, v in hit.items() if k != "html"},
+             "imageUrls": re.findall(r'<img[^>]+src="([^"]+)"', hit.get("html") or "")[:1]},
     )
 
 

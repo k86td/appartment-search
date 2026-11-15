@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS images (
     PRIMARY KEY (listing_id, idx)
 );
 
+-- Tes marques depuis /carte : 'aime' ou 'cache'.
+CREATE TABLE IF NOT EXISTS marques (
+    listing_id  TEXT PRIMARY KEY,
+    statut      TEXT NOT NULL CHECK (statut IN ('aime', 'cache')),
+    le          TEXT NOT NULL
+);
+
 -- Vue pratique pour Datasette : annonce + description + attributs courants.
 CREATE VIEW IF NOT EXISTS annonces AS
 SELECT

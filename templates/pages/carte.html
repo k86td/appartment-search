@@ -55,6 +55,16 @@
          display: inline-block; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
   .pin.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .pin.picked { outline: 2px solid var(--mid); }
+  .pin.liked::before { content: "♥ "; color: #e0457b; }
+  .pin.active.liked::before { color: #fff; }
+  .mk { border: none; background: none; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px;
+        color: var(--muted); }
+  .mk.on.like { color: #e0457b; }
+  .mk.on.hide { color: var(--text); }
+  .card.cache { opacity: .55; }
+  .card.aime { border-color: #e0457b55; }
+  .badge { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--bad);
+           border: 1px solid var(--bad); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
   /* Groupe : même pastille que les prix, avec le nombre en accent. */
   .cluster { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
              transform: translate(-50%, -50%); background: var(--panel); color: var(--text);
@@ -104,6 +114,12 @@
     <label>Tri <select id="sort"></select></label>
     <label>Prix max <input id="maxprice" type="number" step="50" placeholder="—"></label>
     <label>Taille <select id="size"><option value="">toutes</option></select></label>
+    <label>Afficher <select id="vue">
+      <option value="normal">sans les cachées</option>
+      <option value="aime">♥ aimées</option>
+      <option value="cache">cachées seulement</option>
+      <option value="tout">tout</option>
+    </select></label>
     <label id="isowrap" hidden>Isochrone <select id="iso"><option value="">aucune</option></select></label>
     <button id="cmpbtn">Comparer (0)</button>
     <span id="count"></span>
@@ -122,6 +138,7 @@ const MODES = [["bus", "Bus"], ["velo", "Vélo"], ["auto", "Auto"]];
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
+let byId = {};
 let listings = [], dests = [], markers = {}, picked = new Set(), activeId = null, clusterKey = null;
 const map = L.map("map", { maxZoom: 19 }).setView([46.81, -71.27], 12);
 // Fond vectoriel OpenFreeMap (gratuit, sans clé) : épuré de loin, détaillé en zoomant.
@@ -145,7 +162,31 @@ const cluster = L.markerClusterGroup({
   },
 }).addTo(map);
 
-function pinClass(id) { return [id === activeId && "active", picked.has(id) && "picked"].filter(Boolean).join(" "); }
+function pinClass(id) {
+  const l = byId[id];
+  return [id === activeId && "active", picked.has(id) && "picked", l?.marque === "aime" && "liked"].filter(Boolean).join(" ");
+}
+
+// Marques (aime / cache), enregistrées dans la base via les requêtes « marquer » / « demarquer ».
+async function setMarque(id, statut) {
+  const l = byId[id];
+  const nouveau = l.marque === statut ? null : statut;   // re-cliquer retire la marque
+  const r = await fetch(`${DB}/${nouveau ? "marquer" : "demarquer"}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(nouveau ? { listing_id: id, statut: nouveau } : { listing_id: id }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || body.ok === false) { alert("Impossible d'enregistrer : " + (body.message || r.status)); return; }
+  l.marque = nouveau;
+  render();
+  if ($("#modal").classList.contains("open")) openSheet(id);
+}
+
+function markButtons(l) {
+  return `<button class="mk like ${l.marque === "aime" ? "on" : ""}" data-mark="aime" data-id="${esc(l.id)}" title="J'aime">${l.marque === "aime" ? "♥" : "♡"}</button>
+    <button class="mk hide ${l.marque === "cache" ? "on" : ""}" data-mark="cache" data-id="${esc(l.id)}" title="${l.marque === "cache" ? "Ne plus cacher" : "Cacher"}">${l.marque === "cache" ? "◉" : "⊘"}</button>`;
+}
 function pinIcon(l, cls) {
   return L.divIcon({ className: "", html: `<span class="pin ${cls}">${l.prix ? l.prix + "$" : "?"}</span>` });
 }
@@ -182,6 +223,8 @@ function filtered() {
   return listings
     .filter((l) => !(max && l.prix && l.prix > max))
     .filter((l) => !size || l.taille === size)
+    .filter((l) => ({ normal: l.marque !== "cache", aime: l.marque === "aime",
+                      cache: l.marque === "cache", tout: true })[$("#vue").value])
     .sort((a, b) => {
       const x = a[key], y = b[key];
       if (x == null) return 1; if (y == null) return -1;
@@ -194,10 +237,11 @@ function render() {
   $("#count").textContent = `${rows.length} annonces`;
   $("#list").innerHTML = rows.map((l) => {
     const img = images(l)[0];
-    return `<div class="card ${l.id === activeId ? "active" : ""}" data-id="${esc(l.id)}">
+    return `<div class="card ${l.id === activeId ? "active" : ""} ${l.marque || ""}" data-id="${esc(l.id)}">
       ${img ? `<img loading="lazy" src="${esc(img)}">` : "<img>"}
       <div>
-        <div class="row"><h3>${esc(l.titre)}</h3>
+        <div class="row"><h3>${esc(l.titre)}${l.actif ? "" : '<span class="badge">retirée</span>'}</h3>
+          ${markButtons(l)}
           <label class="cmp"><input type="checkbox" data-pick="${esc(l.id)}" ${picked.has(l.id) ? "checked" : ""}> comparer</label></div>
         <div class="meta"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
           · ${esc(l.taille || "?")} · ${esc(l.adresse || "")}</div>
@@ -247,7 +291,7 @@ function contactHtml(l) {
 function openSheet(id) {
   const l = listings.find((x) => x.id === id);
   $("#sheet").innerHTML = `
-    <header><h2>${esc(l.titre)}</h2><button id="close">Fermer</button></header>
+    <header><h2>${esc(l.titre)}${l.actif ? "" : '<span class="badge">retirée</span>'}</h2>${markButtons(l)}<button id="close">Fermer</button></header>
     <div class="meta"><span class="price">${l.prix ? l.prix + " $" : "?"}</span> · ${esc(l.taille || "?")}
       · ${esc(l.adresse || "")} · dispo ${esc(l.disponible || "?")}
       · <a href="${esc(l.url)}" target="_blank" rel="noopener">voir l'annonce</a></div>
@@ -287,6 +331,10 @@ function renderCompare() {
 }
 
 // Événements
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mark]");
+  if (b) { e.stopPropagation(); setMarque(b.dataset.id, b.dataset.mark); }
+}, true);
 $("#list").addEventListener("click", (e) => {
   const pick = e.target.closest("[data-pick]");
   if (pick) {
@@ -316,7 +364,7 @@ $("#zoom").onclick = () => $("#zoom").classList.remove("open");
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") { $("#zoom").classList.remove("open"); $("#modal").classList.remove("open"); }
 });
-for (const id of ["#sort", "#size", "#maxprice"]) $(id).addEventListener("input", render);
+for (const id of ["#sort", "#size", "#maxprice", "#vue"]) $(id).addEventListener("input", render);
 
 // Isochrones : une cellule colorée par point de la grille.
 const BANDS = [[10, "#1a9850"], [20, "#91cf60"], [30, "#d9ef8b"], [40, "#fee08b"], [50, "#fc8d59"], [60, "#d73027"]];
@@ -355,6 +403,7 @@ $("#iso").addEventListener("input", (e) => showIso(e.target.value));
 (async () => {
   try { dests = await get(`${DB}/destinations.json?_shape=array`); } catch { dests = []; }
   listings = await get(`${DB}/carte.json?_shape=array&_size=max`);
+  byId = Object.fromEntries(listings.map((l) => [l.id, l]));
 
   const sorts = [["premiere_vue", "Plus récentes"], ["prix", "Prix"]];
   for (const d of dests) for (const [m, n] of MODES) sorts.push([`${d.slug}_${m}`, `${d.nom} · ${n}`]);
