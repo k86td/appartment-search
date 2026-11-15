@@ -63,11 +63,13 @@
   .search:focus-within { border-color: var(--accent); background: var(--panel); }
   .search input { flex: 1; border: none; outline: none; background: none; color: var(--text); font: inherit; }
 
-  .seg { margin: 10px 14px 0; display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px;
+  .seg { margin: 10px 14px 0; display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px;
          background: var(--panel-2); border-radius: 10px; }
   .seg button { border: none; background: none; padding: 5px 0; border-radius: 8px; color: var(--muted);
                 font-size: 13px; font-weight: 600; }
   .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg button i { font-style: normal; font-weight: 500; font-size: 11px; color: var(--muted); margin-left: 2px; }
+  .tag.new { background: var(--accent-soft); color: var(--accent); }
 
   .filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; flex: none; }
   .chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px;
@@ -223,9 +225,10 @@
   <label class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     <input id="q" type="search" placeholder="Rechercher un titre, une rue, un quartier…" autocomplete="off"></label>
   <div class="seg" id="vue">
-    <button data-v="normal" class="on">Toutes</button>
-    <button data-v="aime">♥ Aimées</button>
-    <button data-v="cache">Cachées</button>
+    <button data-v="normal" class="on">Toutes <i></i></button>
+    <button data-v="new" title="Vues pour la première fois dans les dernières 48 h">Nouvelles <i></i></button>
+    <button data-v="aime">♥ Aimées <i></i></button>
+    <button data-v="cache">Cachées <i></i></button>
   </div>
   <div class="filters" id="filters">
     <label class="chip" id="pricechip"><span class="muted">≤</span><input id="maxprice" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Prix max" size="7"><span class="muted">$</span></label>
@@ -424,9 +427,19 @@ function timesHtml(l) {
 }
 
 function matches(l) {
+  if (!vueOk(l, state.vue)) return false;
+  return filtresOk(l);
+}
+
+const NOUVELLE_MS = 48 * 3600 * 1000;
+function vueOk(l, vue) {
+  return { normal: l.marque !== "cache", new: l._new && l.marque !== "cache",
+           aime: l.marque === "aime", cache: l.marque === "cache" }[vue];
+}
+
+function filtresOk(l) {
   const max = parseFloat(state.maxprice), tmax = parseFloat(state.tripmax);
   const q = state.q.trim().toLowerCase();
-  if (!({ normal: l.marque !== "cache", aime: l.marque === "aime", cache: l.marque === "cache" })[state.vue]) return false;
   if (max && l.prix && l.prix > max) return false;
   if (state.sizes.length && !state.sizes.includes(l.taille)) return false;
   if (state.tripkey && tmax && !(l[state.tripkey] != null && l[state.tripkey] <= tmax)) return false;
@@ -452,6 +465,7 @@ function cardHtml(l) {
       <div class="line1"><span class="price">${l.prix ? l.prix + " $" : "?"}</span>
         ${l.taille ? `<span class="tag">${esc(l.taille)}</span>` : ""}
         ${d ? `<span class="tag">${esc(d)}</span>` : ""}
+        ${l._new ? '<span class="tag new">nouveau</span>' : ""}
         ${l.actif ? "" : '<span class="tag gone">retirée</span>'}</div>
       <div class="title">${esc(l.titre)}</div>
       <div class="addr">${esc(l.adresse || "")}</div>
@@ -489,6 +503,9 @@ function render({ keep = false } = {}) {
   more.observe(sentinel);
 
   $("#count").textContent = rows.length;
+  // Nombre d'annonces dans chaque vue, avec les autres filtres appliqués.
+  const base = listings.filter(filtresOk);
+  for (const b of $$("#vue button")) b.querySelector("i").textContent = base.filter((l) => vueOk(l, b.dataset.v)).length;
   $("#opencount").textContent = `${rows.length} annonces`;
   // Les marqueurs suivent les filtres, mais pas le filtre « immeuble » (on garde le contexte autour).
   const key = all.map((l) => l.id).join(",");
@@ -712,7 +729,11 @@ async function showIso(value) {
   try { dests = await get(`${DB}/destinations.json?_shape=array`); } catch { dests = []; }
   listings = await get(`${DB}/carte.json?_shape=array&_size=max`);
   byId = Object.fromEntries(listings.map((l) => [l.id, l]));
-  for (const l of listings) l._txt = `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase();
+  const now = Date.now();
+  for (const l of listings) {
+    l._txt = `${l.titre} ${l.adresse} ${l.description || ""}`.toLowerCase();
+    l._new = now - Date.parse(l.premiere_vue) < NOUVELLE_MS;
+  }
 
   const sorts = [["premiere_vue", "Plus récentes"], ["prix", "Prix croissant"]];
   const trips = [];
