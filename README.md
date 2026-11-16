@@ -65,6 +65,7 @@ Services créés :
 | `appartment-search-ui` | interface sur `127.0.0.1:8001` (`ui.port`) |
 | `appartment-search-otp` | OpenTripPlanner ; construit le graphe au 1er démarrage |
 | `appartment-search-otp-build.timer` | reconstruit le graphe chaque mois (horaires RTC) ; carte OSM retéléchargée après `otp.osmMaxAgeDays` (90 j) |
+| `appartment-search-trajets` | calcule en continu tous les temps de trajet manquants (`otp.trajetsWorker`) |
 | `appartment-search-isochrones` | à lancer à la main : `systemctl start appartment-search-isochrones` |
 | `appartment-search-tailscale` | `tailscale serve` vers l'interface (si `tailscale.enable`) |
 

@@ -464,6 +464,7 @@ const afterPanel = (fn) => setTimeout(fn, 280);   // laisse l'animation du panne
 // Regroupement : le badge donne le nombre d'annonces et le prix le plus bas.
 const cluster = L.markerClusterGroup({
   maxClusterRadius: 60,
+  disableClusteringAtZoom: 17,    // de près, chaque immeuble a son propre marqueur
   showCoverageOnHover: false,
   spiderfyOnMaxZoom: false,       // une adresse = un marqueur, rien à écarter
   zoomToBoundsOnClick: false,     // remplacé par un zoom qui tient compte du panneau (plus bas)
@@ -478,8 +479,17 @@ const cluster = L.markerClusterGroup({
   },
 }).addTo(map);
 cluster.on("clusterclick", (e) => {
+  const b = e.layer.getBounds();
+  const taille = b.getNorthWest().distanceTo(b.getSouthEast());
+  // Annonces très proches (ou déjà zoomé) : zoomer ne les séparerait pas -> on les liste.
+  if (taille < 80 || map.getZoom() >= 16) {
+    const keys = [...new Set(e.layer.getAllChildMarkers().map((m) => m.options.key))];
+    setLieu(keys.join("|"));
+    ensureVisible(e.layer.getLatLng());
+    return;
+  }
   const { tl, br } = viewPad();
-  map.fitBounds(e.layer.getBounds(), { paddingTopLeft: tl, paddingBottomRight: br, maxZoom: 17 });
+  map.fitBounds(b, { paddingTopLeft: tl, paddingBottomRight: br, maxZoom: 17 });
 });
 
 // ---------- Marqueurs : un par immeuble (adresse / coordonnées) ----------
@@ -490,7 +500,7 @@ const geoKey = (l) => l.latitude == null ? null : `${(+l.latitude).toFixed(5)},$
 
 function groupIcon(g) {
   const ls = g.ids.map((id) => byId[id]);
-  const active = g.ids.includes(activeId) || state.lieu === g.key;
+  const active = g.ids.includes(activeId) || lieuKeys().has(g.key);
   const liked = ls.some((l) => l.marque === "aime");
   const pickd = g.ids.some((id) => picked.has(id));
   if (ls.length === 1) {
@@ -514,7 +524,7 @@ function rebuildMarkers(rows) {
   cluster.clearLayers();
   const ms = [];
   for (const g of groups.values()) {
-    g.marker = L.marker([g.lat, g.lng], { icon: groupIcon(g), n: g.ids.length,
+    g.marker = L.marker([g.lat, g.lng], { icon: groupIcon(g), n: g.ids.length, key: g.key,
       prix: Math.min(...g.ids.map((id) => byId[id].prix || Infinity)) });
     g.marker.on("click", () => {
       const wasHidden = state.collapsed || (isMobile() && $("#side").classList.contains("expanded"));
@@ -533,9 +543,13 @@ function refreshMarker(id) {
   if (g) g.marker.setIcon(groupIcon(g));
 }
 
+// Filtre « lieu » : un ou plusieurs immeubles (clés GPS séparées par « | »).
+const lieuKeys = () => new Set(state.lieu ? state.lieu.split("|") : []);
 function setLieu(key) {
   state.lieu = state.lieu === key ? "" : key;   // re-cliquer le même immeuble retire le filtre
   activeId = null;
+  // La liste doit être visible pour montrer le résultat (panneau masqué, ou réduit sur mobile).
+  if (state.lieu && state.collapsed) toggleSide(false);
   render();
   $("#list").scrollTop = 0;
 }
@@ -667,7 +681,8 @@ function appendCards(n = PAGE) {
 function render({ keep = false } = {}) {
   const all = filtered();
   // Filtre « immeuble » (clic sur un marqueur groupé) appliqué après les autres.
-  rows = state.lieu ? all.filter((l) => geoKey(l) === state.lieu) : all;
+  const lk = lieuKeys();
+  rows = lk.size ? all.filter((l) => lk.has(geoKey(l))) : all;
   const n = keep ? Math.max(shown, PAGE) : PAGE;
   shown = 0;
   $("#list").innerHTML = rows.length ? "" : '<div class="empty">Aucune annonce avec ces filtres.</div>';
@@ -731,10 +746,12 @@ function syncControls() {
   const nf = (state.maxprice ? 1 : 0) + (state.tripkey && state.tripmax ? 1 : 0) + state.sizes.length + (state.lieu ? 1 : 0);
   $("#fcount").textContent = nf ? ` · ${nf}` : "";
   $("#ftoggle").classList.toggle("on", nf > 0);
-  const g = state.lieu && groups.get(state.lieu);
+  const lk = [...lieuKeys()];
+  const g = lk.length === 1 && groups.get(lk[0]);
   $("#lieuchip").hidden = !state.lieu;
   if (state.lieu) {
-    const adr = (g && byId[g.ids[0]].adresse || "Immeuble").replace(/,\s*Canada$/i, "");
+    const adr = lk.length > 1 ? `${lk.length} adresses proches`
+      : (g && byId[g.ids[0]].adresse || "Immeuble").replace(/,\s*Canada$/i, "");
     $("#lieutxt").textContent = adr;
     $("#lieun").textContent = `· ${rows.length}`;
     $("#lieutxt").title = adr;
@@ -745,7 +762,7 @@ function syncControls() {
 // Sélection : seules les deux cartes et les deux marqueurs concernés changent (pas de re-rendu complet).
 function focus(id, pan) {
   // Annonce hors de l'immeuble sélectionné : on quitte le filtre « immeuble » d'abord.
-  if (state.lieu && geoKey(byId[id]) !== state.lieu) { state.lieu = ""; activeId = null; render(); }
+  if (state.lieu && !lieuKeys().has(geoKey(byId[id]))) { state.lieu = ""; activeId = null; render(); }
   const prev = activeId;
   activeId = id;
   if (prev && prev !== id) { cardEl(prev)?.classList.remove("active"); if (byId[prev]) refreshMarker(prev); }

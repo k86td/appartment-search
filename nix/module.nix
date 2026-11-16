@@ -24,7 +24,10 @@ let
       images.dossier = "${cfg.dataDir}/images";
       trajets.otp_url = "http://127.0.0.1:${toString cfg.otp.port}/otp/gtfs/v1";
     };
-  configFile = toml.generate "appartment-search.toml" settings;
+  # Avec le worker, le scraping ne calcule plus de trajets lui-même.
+  settingsScrape = lib.recursiveUpdate settings
+    (lib.optionalAttrs (cfg.otp.enable && cfg.otp.trajetsWorker) { trajets.max_par_passage = 0; });
+  configFile = toml.generate "appartment-search.toml" settingsScrape;
 
   # Sites actifs, et répartition entre horaire propre et horaire global.
   actifs = lib.attrNames (lib.filterAttrs (_: c: c.enabled or true) (settings.scrapers or { }));
@@ -148,6 +151,14 @@ in
         default = "monthly";
         description = "Reconstruction du graphe avec les derniers horaires du RTC (format OnCalendar).";
       };
+      trajetsWorker = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Service en continu qui calcule tous les temps de trajet manquants dès qu'il y en a
+          (au lieu d'un nombre limité à chaque passage de scraping).
+        '';
+      };
       osmMaxAgeDays = lib.mkOption {
         type = lib.types.ints.positive;
         default = 90;
@@ -176,6 +187,20 @@ in
         Type = "oneshot";
         ExecStart = "${pkgsFlake.appartment-search}/bin/appartment-search -c ${configFile} --isochrones";
         TimeoutStartSec = "infinity";
+      };
+    };
+
+    # ---------- Temps de trajet en continu ----------
+    systemd.services.appartment-search-trajets = lib.mkIf (cfg.otp.enable && cfg.otp.trajetsWorker) {
+      description = "Recherche d'appartements : calcul des temps de trajet en continu";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "appartment-search-otp.service" ];
+      wants = [ "appartment-search-otp.service" ];
+      serviceConfig = commun // {
+        ExecStart = "${pkgsFlake.appartment-search}/bin/appartment-search -c ${toml.generate "appartment-search-trajets.toml" settings} --trajets-worker";
+        Restart = "always";
+        RestartSec = "30s";
+        Nice = 10;
       };
     };
 

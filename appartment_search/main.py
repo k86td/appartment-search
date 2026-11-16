@@ -90,6 +90,8 @@ def main() -> None:
     parser.add_argument("--db", help="chemin de la base (remplace `database` de la config)")
     parser.add_argument("--init", action="store_true",
                         help="crée/met à jour les tables et vues sans rien scraper (lancé par l'UI)")
+    parser.add_argument("--trajets-worker", action="store_true",
+                        help="tourne en continu et calcule tous les temps de trajet manquants (service)")
     parser.add_argument("--isochrones", action="store_true",
                         help="calcule la grille d'isochrones (long, à faire une fois ; reprend où il était)")
     args = parser.parse_args()
@@ -110,7 +112,7 @@ def main() -> None:
 
     # Un seul scraping à la fois sur une même base (plusieurs timers peuvent tomber en même
     # temps) : le second attend la fin du premier. --init et --isochrones ne prennent pas le verrou.
-    if not (args.init or args.isochrones):
+    if not (args.init or args.isochrones or args.trajets_worker):
         verrou = open(config.get("database", "listings.db") + ".lock", "w")
         fcntl.flock(verrou, fcntl.LOCK_EX)
     if args.init:
@@ -126,8 +128,12 @@ def main() -> None:
         trajets.create_tables(conn, t.get("destinations", []))
         isochrones.calculer(conn, config.get("isochrones", {}), t.get("destinations", []),
                             t.get("otp_url", "http://localhost:8080/otp/gtfs/v1"), t.get("arrivee", "08:30"))
+    elif args.trajets_worker:
+        trajets.worker(db.connect(config.get("database", "listings.db")), config.get("trajets", {}))
     elif args.trajets_seulement:
-        trajets.calculer(db.connect(config.get("database", "listings.db")), config.get("trajets", {}))
+        conn, t = db.connect(config.get("database", "listings.db")), config.get("trajets", {})
+        while (reste := trajets.calculer(conn, t, limit=t.get("lot", 200))) and reste > 0:
+            pass                                    # jusqu'à ce que tout soit calculé
     else:
         run(config, sources)
 

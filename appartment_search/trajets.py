@@ -2,6 +2,8 @@
 calculés par OpenTripPlanner (API GraphQL GTFS)."""
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
 import sqlite3
@@ -108,49 +110,84 @@ def create_tables(conn: sqlite3.Connection, destinations: list[dict]) -> None:
     conn.commit()
 
 
-def calculer(conn: sqlite3.Connection, cfg: dict) -> None:
-    destinations = cfg.get("destinations", [])
-    if not destinations:
-        return
-    create_tables(conn, destinations)
-
-    otp_url = cfg.get("otp_url", "http://localhost:8080/otp/gtfs/v1")
-    arrivee = prochaine_arrivee(cfg.get("arrivee", "08:30"))
-    limit = cfg.get("max_par_passage", 500)
-
-    try:
-        requests.get(otp_url.rsplit("/otp", 1)[0], timeout=5)
-    except requests.RequestException:
-        log.warning("OTP injoignable (%s) : temps de trajet ignorés pour ce passage", otp_url)
-        return
-
-    # Adresses avec coordonnées, auxquelles il manque au moins un trajet.
+def _en_attente(conn: sqlite3.Connection, destinations: list[dict]) -> list[tuple]:
+    """Trajets manquants, annonces actives et récentes d'abord."""
     todo = []
     for d in destinations:
         for m in MODES:
             rows = conn.execute(
-                """SELECT g.adresse, g.lat, g.lng FROM geo g
+                """SELECT g.adresse, g.lat, g.lng,
+                          (SELECT max(l.actif * 1e10 + strftime('%s', l.premiere_vue))
+                             FROM listings l WHERE l.adresse = g.adresse) AS prio
+                   FROM geo g
                    WHERE g.lat IS NOT NULL AND NOT EXISTS (
                      SELECT 1 FROM trajets t WHERE t.adresse = g.adresse
                        AND t.destination = ? AND t.mode = ?)""",
                 (slug(d["nom"]), m),
             )
-            todo += [(adr, lat, lng, d, m) for adr, lat, lng in rows]
+            todo += [(prio or 0, adr, lat, lng, d, m) for adr, lat, lng, prio in rows]
+    todo.sort(key=lambda t: -t[0])
+    return [t[1:] for t in todo]
+
+
+def calculer(conn: sqlite3.Connection, cfg: dict, limit: int | None = None) -> int | None:
+    """Calcule jusqu'à `limit` trajets manquants (défaut : max_par_passage).
+    Retourne le nombre restant, ou None si OTP est injoignable."""
+    destinations = cfg.get("destinations", [])
+    if not destinations:
+        return 0
+    create_tables(conn, destinations)
+
+    otp_url = cfg.get("otp_url", "http://localhost:8080/otp/gtfs/v1")
+    arrivee = prochaine_arrivee(cfg.get("arrivee", "08:30"))
+    limit = cfg.get("max_par_passage", 500) if limit is None else limit
+    if limit <= 0:
+        return None
+
+    try:
+        requests.get(otp_url.rsplit("/otp", 1)[0], timeout=5)
+    except requests.RequestException:
+        log.warning("OTP injoignable (%s) : temps de trajet reportés", otp_url)
+        return None
+
+    todo = _en_attente(conn, destinations)
+    lot = todo[:limit]
+
+    def un(t):
+        adr, lat, lng, d, m = t
+        return t, trajet(otp_url, (lat, lng), (d["lat"], d["lng"]), m, arrivee)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ok = 0
-    for adr, lat, lng, d, m in todo[:limit]:
-        try:
-            res = trajet(otp_url, (lat, lng), (d["lat"], d["lng"]), m, arrivee)
-        except Exception as e:
-            log.warning("trajet %s -> %s (%s) : %s", adr, d["nom"], m, e)
-            continue
-        conn.execute(
-            "INSERT OR REPLACE INTO trajets VALUES (?, ?, ?, ?, ?, ?)",
-            (adr, slug(d["nom"]), m, res and res["minutes"],
-             json.dumps(res and res["etapes"], ensure_ascii=False), now),
-        )
-        ok += 1
+    # Requêtes OTP en parallèle ; écritures SQLite dans ce fil seulement.
+    with ThreadPoolExecutor(cfg.get("paralleles", 4)) as pool:
+        for f in as_completed([pool.submit(un, t) for t in lot]):
+            try:
+                (adr, _, _, d, m), res = f.result()
+            except Exception as e:
+                log.warning("trajet ignoré : %s", e)
+                continue
+            conn.execute(
+                "INSERT OR REPLACE INTO trajets VALUES (?, ?, ?, ?, ?, ?)",
+                (adr, slug(d["nom"]), m, res and res["minutes"],
+                 json.dumps(res and res["etapes"], ensure_ascii=False), now),
+            )
+            ok += 1
+            if ok % 100 == 0:
+                conn.commit()
     conn.commit()
-    if todo:
-        log.info("trajets : %d calculés (%d en attente)", ok, max(0, len(todo) - limit))
+    reste = len(todo) - ok
+    if lot:
+        log.info("trajets : %d calculés (%d en attente)", ok, reste)
+    return reste
+
+
+def worker(conn: sqlite3.Connection, cfg: dict, pause: int = 60) -> None:
+    """Tourne en continu : calcule les trajets manquants par lots, puis attend
+    les nouvelles annonces (ou qu'OTP soit prêt) avant de recommencer."""
+    lot = cfg.get("lot", 200)
+    log.info("worker de trajets démarré (lots de %d, pause %d s)", lot, pause)
+    while True:
+        reste = calculer(conn, cfg, limit=lot)
+        if reste is None or reste <= 0:
+            time.sleep(pause)
