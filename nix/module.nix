@@ -53,6 +53,12 @@ let
     User = "appartment-search";
     Group = "appartment-search";
     WorkingDirectory = cfg.dataDir;
+  } // lib.optionalAttrs (cfg.dataDir == "/var/lib/appartment-search") {
+    # systemd (re)donne le dossier à l'utilisateur à chaque démarrage, même s'il a été
+    # remplacé par un montage (ex. impermanence) appartenant à root.
+    StateDirectory = "appartment-search";
+    StateDirectoryMode = "0750";
+  } // {
     # Durcissement raisonnable : rien d'autre que le dossier de données en écriture.
     ProtectSystem = "strict";
     ReadWritePaths = [ cfg.dataDir ];
