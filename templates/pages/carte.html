@@ -500,7 +500,8 @@ const geoKey = (l) => l.latitude == null ? null : `${(+l.latitude).toFixed(5)},$
 
 function groupIcon(g) {
   const ls = g.ids.map((id) => byId[id]);
-  const active = g.ids.includes(activeId) || lieuKeys().has(g.key);
+  // Une annonce sélectionnée l'emporte sur le surlignage du filtre « lieu ».
+  const active = activeId ? g.ids.includes(activeId) : lieuKeys().has(g.key);
   const liked = ls.some((l) => l.marque === "aime");
   const pickd = g.ids.some((id) => picked.has(id));
   if (ls.length === 1) {
@@ -772,6 +773,7 @@ function focus(id, pan) {
     if (i >= 0) { appendCards(i - shown + PAGE); el = cardEl(id); }
   }
   el?.classList.add("active");
+  for (const k of lieuKeys()) { const g = groups.get(k); if (g) g.marker.setIcon(groupIcon(g)); }
   refreshMarker(id);
   markSeen(id);
   if (state.collapsed && !pan) toggleSide(false);
