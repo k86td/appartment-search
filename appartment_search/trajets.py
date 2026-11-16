@@ -2,7 +2,7 @@
 calculés par OpenTripPlanner (API GraphQL GTFS)."""
 
 import json
-import time
+from time import sleep
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
@@ -190,4 +190,4 @@ def worker(conn: sqlite3.Connection, cfg: dict, pause: int = 60) -> None:
     while True:
         reste = calculer(conn, cfg, limit=lot)
         if reste is None or reste <= 0:
-            time.sleep(pause)
+            sleep(pause)
